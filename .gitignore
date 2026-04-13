@@ -12,3 +12,7 @@ logs/
 *.png
 *.jpg
 *.jpeg
+
+.vscode/
+.ipynb_checkpoints/
+src/.ipynb_checkpoints/
