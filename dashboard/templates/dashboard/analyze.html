@@ -1,0 +1,67 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<p class="page-title">🔍 Analyze Image</p>
+
+<div class="card">
+    <form method="POST" enctype="multipart/form-data" id="upload-form">
+        {% csrf_token %}
+        <div class="drop-zone" id="drop-zone">
+            <div class="icon">📁</div>
+            <p>Drag & drop an image here or</p>
+            <label class="btn btn-primary" style="cursor:pointer;">
+                Browse File
+                <input type="file" name="image" id="file-input" accept="image/*" style="display:none;" required>
+            </label>
+            <p style="margin-top:10px; font-size:12px; color:#555;">Supports JPG, PNG, WEBP</p>
+        </div>
+        <img id="preview" src="" alt="Preview">
+        <div style="text-align:center; margin-top:20px;">
+            <button type="submit" class="btn btn-primary" id="submit-btn" style="display:none; font-size:16px; padding:14px 40px;">
+                🔍 Analyze Now
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    const dropZone   = document.getElementById('drop-zone');
+    const fileInput  = document.getElementById('file-input');
+    const preview    = document.getElementById('preview');
+    const submitBtn  = document.getElementById('submit-btn');
+
+    function showPreview(file) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            preview.src = e.target.result;
+            preview.style.display = 'block';
+            submitBtn.style.display = 'inline-block';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    fileInput.addEventListener('change', e => {
+        if (e.target.files[0]) showPreview(e.target.files[0]);
+    });
+
+    dropZone.addEventListener('dragover', e => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            showPreview(file);
+        }
+    });
+</script>
+{% endblock %}

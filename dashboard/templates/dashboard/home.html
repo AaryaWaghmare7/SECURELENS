@@ -1,0 +1,63 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<p class="page-title">🏠 Dashboard</p>
+
+<div class="card-grid">
+    <div class="stat-card">
+        <div class="number">{{ total }}</div>
+        <div class="label">Total Analyzed</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color:#00ff88;">{{ real_count }}</div>
+        <div class="label">Real Images</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color:#ff4444;">{{ ai_count }}</div>
+        <div class="label">AI Images</div>
+    </div>
+    <div class="stat-card">
+        <div class="number" style="color:#ffaa00;">{{ no_model }}</div>
+        <div class="label">Undetected</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom:15px; color:#00e5ff;">Recent Analyses</h3>
+    {% if analyses %}
+    <table>
+        <tr>
+            <th>Image</th>
+            <th>Verdict</th>
+            <th>Confidence</th>
+            <th>Mean</th>
+            <th>Std Dev</th>
+            <th>Date</th>
+        </tr>
+        {% for item in analyses %}
+        <tr>
+            <td><img src="{{ item.image.url }}" width="50" height="50" style="border-radius:6px; object-fit:cover;"></td>
+            <td>
+                <span class="badge {% if item.prediction == 'REAL' %}badge-real{% elif item.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
+                    {{ item.prediction }}
+                </span>
+            </td>
+            <td>
+                <div style="min-width:120px;">
+                    {{ item.confidence|floatformat:2 }}
+                    <div class="confidence-bar">
+                        <div class="confidence-fill {% if item.prediction == 'REAL' %}fill-real{% else %}fill-ai{% endif %}"
+                             style="width:{{ item.confidence|floatformat:0 }}%"></div>
+                    </div>
+                </div>
+            </td>
+            <td>{{ item.mean_pixel|floatformat:1 }}</td>
+            <td>{{ item.std_pixel|floatformat:1 }}</td>
+            <td style="color:#888; font-size:12px;">{{ item.uploaded_at|date:"M d, Y H:i" }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p style="color:#888; text-align:center; padding:30px;">No analyses yet. <a href="/analyze/" style="color:#00e5ff;">Analyze your first image!</a></p>
+    {% endif %}
+</div>
+{% endblock %}

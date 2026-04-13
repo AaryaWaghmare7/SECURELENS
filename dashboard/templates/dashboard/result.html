@@ -1,0 +1,49 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<p class="page-title">📊 Analysis Result</p>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+    <div class="card" style="text-align:center;">
+        <img src="{{ obj.image.url }}" style="max-width:100%; border-radius:10px; margin-bottom:20px;">
+        <span class="badge {% if obj.prediction == 'REAL' %}badge-real{% elif obj.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}"
+              style="font-size:18px; padding:8px 24px;">
+            {{ obj.prediction }}
+        </span>
+    </div>
+
+    <div>
+        <div class="card">
+            <h3 style="color:#00e5ff; margin-bottom:20px;">Detection Details</h3>
+            <p style="margin-bottom:8px;">Confidence Score</p>
+            <div style="font-size:28px; font-weight:bold; color:{% if obj.prediction == 'REAL' %}#00ff88{% else %}#ff4444{% endif %}">
+                {{ obj.confidence|floatformat:2 }}%
+            </div>
+            <div class="confidence-bar" style="height:14px; margin-top:10px; margin-bottom:20px;">
+                <div class="confidence-fill {% if obj.prediction == 'REAL' %}fill-real{% else %}fill-ai{% endif %}"
+                     style="width:{{ obj.confidence|floatformat:0 }}%"></div>
+            </div>
+
+            <table style="font-size:14px;">
+                <tr>
+                    <td style="color:#888; padding:8px 0;">Mean Pixel</td>
+                    <td style="font-weight:bold;">{{ obj.mean_pixel|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td style="color:#888; padding:8px 0;">Std Deviation</td>
+                    <td style="font-weight:bold;">{{ obj.std_pixel|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td style="color:#888; padding:8px 0;">Analyzed At</td>
+                    <td style="font-weight:bold;">{{ obj.uploaded_at|date:"M d, Y H:i" }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <a href="/analyze/" class="btn btn-primary">🔍 Analyze Another</a>
+            <a href="/history/delete/{{ obj.pk }}/" class="btn btn-danger">🗑️ Delete</a>
+            <a href="/" class="btn btn-secondary">🏠 Home</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

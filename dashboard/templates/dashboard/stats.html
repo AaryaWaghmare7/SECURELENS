@@ -1,0 +1,53 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<p class="page-title">📊 Statistics</p>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+    <div class="card">
+        <h3 style="color:#00e5ff; margin-bottom:20px;">Real vs AI Distribution</h3>
+        <canvas id="pieChart"></canvas>
+    </div>
+    <div class="card">
+        <h3 style="color:#00e5ff; margin-bottom:20px;">Summary</h3>
+        <table>
+            <tr>
+                <td style="padding:12px 0; color:#888;">Total Analyzed</td>
+                <td style="font-weight:bold; font-size:18px;">{{ total }}</td>
+            </tr>
+            <tr>
+                <td style="padding:12px 0; color:#00ff88;">Real Images</td>
+                <td style="font-weight:bold; font-size:18px; color:#00ff88;">{{ real_count }}</td>
+            </tr>
+            <tr>
+                <td style="padding:12px 0; color:#ff4444;">AI Images</td>
+                <td style="font-weight:bold; font-size:18px; color:#ff4444;">{{ ai_count }}</td>
+            </tr>
+            <tr>
+                <td style="padding:12px 0; color:#888;">Avg Confidence</td>
+                <td style="font-weight:bold; font-size:18px;">{{ avg_confidence|floatformat:2 }}</td>
+            </tr>
+        </table>
+    </div>
+</div>
+
+<script>
+    const ctx = document.getElementById('pieChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Real', 'AI'],
+            datasets: [{
+                data: [{{ real_count }}, {{ ai_count }}],
+                backgroundColor: ['#00ff8880', '#ff444480'],
+                borderColor:     ['#00ff88',   '#ff4444'],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            plugins: {
+                legend: { labels: { color: '#fff', font: { size: 14 } } }
+            }
+        }
+    });
+</script>
+{% endblock %}

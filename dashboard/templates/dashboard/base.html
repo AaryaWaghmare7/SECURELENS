@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureLens 🔐</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #080810;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0; top: 0;
+            width: 220px;
+            height: 100vh;
+            background: #0d0d1a;
+            border-right: 1px solid #1e1e3a;
+            padding: 30px 20px;
+            z-index: 100;
+        }
+
+        .sidebar .logo {
+            font-size: 22px;
+            font-weight: bold;
+            color: #00e5ff;
+            margin-bottom: 40px;
+            display: block;
+            text-decoration: none;
+        }
+
+        .sidebar a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #aaa;
+            text-decoration: none;
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            transition: all 0.2s;
+            font-size: 15px;
+        }
+
+        .sidebar a:hover, .sidebar a.active {
+            background: #1a1a2e;
+            color: #00e5ff;
+        }
+
+        /* Main content */
+        .main {
+            margin-left: 220px;
+            padding: 30px;
+            min-height: 100vh;
+        }
+
+        .page-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00e5ff;
+            margin-bottom: 25px;
+        }
+
+        /* Cards */
+        .card {
+            background: #0d0d1a;
+            border: 1px solid #1e1e3a;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }
+
+        .stat-card {
+            background: #0d0d1a;
+            border: 1px solid #1e1e3a;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-card .number {
+            font-size: 36px;
+            font-weight: bold;
+            color: #00e5ff;
+        }
+
+        .stat-card .label {
+            color: #888;
+            font-size: 13px;
+            margin-top: 5px;
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 10px 22px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary { background: #00e5ff; color: #000; }
+        .btn-primary:hover { background: #00b8cc; }
+        .btn-danger  { background: #ff4444; color: #fff; }
+        .btn-danger:hover  { background: #cc0000; }
+        .btn-secondary { background: #1e1e3a; color: #fff; }
+        .btn-secondary:hover { background: #2a2a4a; }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .badge-real { background: #00ff8820; color: #00ff88; border: 1px solid #00ff88; }
+        .badge-ai   { background: #ff444420; color: #ff4444; border: 1px solid #ff4444; }
+        .badge-none { background: #88888820; color: #888888; border: 1px solid #888888; }
+
+        /* Confidence bar */
+        .confidence-bar {
+            width: 100%;
+            background: #1e1e3a;
+            border-radius: 10px;
+            height: 10px;
+            margin-top: 6px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+
+        .fill-real { background: linear-gradient(90deg, #00ff88, #00cc66); }
+        .fill-ai   { background: linear-gradient(90deg, #ff4444, #cc0000); }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th {
+            background: #1a1a2e;
+            color: #00e5ff;
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #1e1e3a;
+            vertical-align: middle;
+        }
+
+        tr:hover td { background: #0f0f20; }
+
+        /* Drag and drop */
+        .drop-zone {
+            border: 2px dashed #1e1e3a;
+            border-radius: 12px;
+            padding: 50px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #0a0a15;
+        }
+
+        .drop-zone:hover, .drop-zone.dragover {
+            border-color: #00e5ff;
+            background: #0d1a1f;
+        }
+
+        .drop-zone .icon { font-size: 48px; margin-bottom: 15px; }
+        .drop-zone p { color: #888; margin-bottom: 15px; }
+        .drop-zone .highlight { color: #00e5ff; }
+
+        /* Preview */
+        #preview {
+            max-width: 300px;
+            border-radius: 10px;
+            margin: 15px auto;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <a href="/" class="logo">🔐 SecureLens</a>
+        <a href="/">🏠 Dashboard</a>
+        <a href="/analyze/">🔍 Analyze</a>
+        <a href="/history/">📋 History</a>
+        <a href="/stats/">📊 Stats</a>
+        <a href="/admin/">⚙️ Admin</a>
+    </div>
+    <div class="main">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
