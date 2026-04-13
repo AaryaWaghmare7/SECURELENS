@@ -1,4 +1,14 @@
-.DS_Store
+.venv/
+db.sqlite3
+media/
+data/
+models/*.pth
+models/*.keras
 __pycache__/
 *.pyc
-.ipynb_checkpoints/
+.DS_Store
+logs/
+.env
+*.png
+*.jpg
+*.jpeg
