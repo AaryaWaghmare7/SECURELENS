@@ -6,14 +6,43 @@ from django.db.models import Avg
 from .models import ImageAnalysis
 from .forms import ImageUploadForm
 
+DEFAULT_MODEL = os.getenv("SECURELENS_MODEL", "umm-maybe/AI-image-detector")
+
+
+def classify_prediction(results):
+    if not results:
+        return 'Error', 0.0
+
+    ai_keywords = ('ai', 'fake', 'artificial', 'generated', 'synthetic')
+    real_keywords = ('real', 'human', 'authentic', 'natural')
+
+    ai_score = max(
+        (r['score'] for r in results if any(word in r['label'].lower() for word in ai_keywords)),
+        default=None,
+    )
+    real_score = max(
+        (r['score'] for r in results if any(word in r['label'].lower() for word in real_keywords)),
+        default=None,
+    )
+
+    if ai_score is not None and real_score is not None:
+        if ai_score > real_score:
+            return 'AI', round(ai_score * 100, 2)
+        return 'REAL', round(real_score * 100, 2)
+
+    top = max(results, key=lambda item: item['score'])
+    label = top['label'].lower()
+    prediction = 'AI' if any(word in label for word in ai_keywords) else 'REAL'
+    return prediction, round(top['score'] * 100, 2)
+
 def load_model():
     try:
         from transformers import pipeline
         detector = pipeline(
             "image-classification",
-            model="Organika/sdxl-detector"
+            model=DEFAULT_MODEL
         )
-        print("✅ Model loaded!")
+        print(f"✅ Model loaded: {DEFAULT_MODEL}")
         return detector
     except Exception as e:
         print(f"❌ Model load error: {e}")
@@ -49,26 +78,7 @@ def analyze(request):
                     pil_img = Image.open(obj.image.path).convert('RGB')
                     results = detector(pil_img)
                     print(f"Raw results: {results}")
-
-                    # Find AI score specifically
-                    ai_score   = next((r['score'] for r in results if 'artificial' in r['label'].lower() or 'fake' in r['label'].lower() or 'ai' in r['label'].lower()), None)
-                    real_score = next((r['score'] for r in results if 'real' in r['label'].lower() or 'human' in r['label'].lower()), None)
-
-                    print(f"AI score: {ai_score}, Real score: {real_score}")
-
-                    if ai_score and real_score:
-                        if ai_score > real_score:
-                            obj.prediction = 'AI'
-                            obj.confidence = round(ai_score * 100, 2)
-                        else:
-                            obj.prediction = 'REAL'
-                            obj.confidence = round(real_score * 100, 2)
-                    else:
-                        # fallback to top result
-                        top   = results[0]
-                        label = top['label'].lower()
-                        obj.prediction = 'AI' if any(w in label for w in ['artificial', 'fake', 'ai', 'generated', 'synthetic']) else 'REAL'
-                        obj.confidence = round(top['score'] * 100, 2)
+                    obj.prediction, obj.confidence = classify_prediction(results)
 
                     print(f"✅ Final: {obj.prediction} ({obj.confidence}%)")
                 else:
