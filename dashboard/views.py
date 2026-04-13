@@ -11,20 +11,20 @@ def load_model():
         from transformers import pipeline
         detector = pipeline(
             "image-classification",
-            model="umm-maybe/AI-image-detector"
+            model="Organika/sdxl-detector"
         )
-        print("✅ Pretrained AI detector loaded!")
+        print("✅ Model loaded!")
         return detector
     except Exception as e:
         print(f"❌ Model load error: {e}")
         return None
 
 def home(request):
-    analyses    = ImageAnalysis.objects.all().order_by('-uploaded_at')[:10]
-    total       = ImageAnalysis.objects.count()
-    real_count  = ImageAnalysis.objects.filter(prediction='REAL').count()
-    ai_count    = ImageAnalysis.objects.filter(prediction='AI').count()
-    no_model    = ImageAnalysis.objects.filter(prediction='No Model').count()
+    analyses   = ImageAnalysis.objects.all().order_by('-uploaded_at')[:10]
+    total      = ImageAnalysis.objects.count()
+    real_count = ImageAnalysis.objects.filter(prediction='REAL').count()
+    ai_count   = ImageAnalysis.objects.filter(prediction='AI').count()
+    no_model   = ImageAnalysis.objects.filter(prediction='No Model').count()
     return render(request, 'dashboard/home.html', {
         'analyses':   analyses,
         'total':      total,
@@ -49,11 +49,28 @@ def analyze(request):
                     pil_img = Image.open(obj.image.path).convert('RGB')
                     results = detector(pil_img)
                     print(f"Raw results: {results}")
-                    top   = results[0]
-                    label = top['label'].upper()
-                    score = top['score']
-                    obj.prediction = 'AI' if 'AI' in label or 'FAKE' in label or 'ARTIFICIAL' in label else 'REAL'
-                    obj.confidence = round(score * 100, 2)
+
+                    # Find AI score specifically
+                    ai_score   = next((r['score'] for r in results if 'artificial' in r['label'].lower() or 'fake' in r['label'].lower() or 'ai' in r['label'].lower()), None)
+                    real_score = next((r['score'] for r in results if 'real' in r['label'].lower() or 'human' in r['label'].lower()), None)
+
+                    print(f"AI score: {ai_score}, Real score: {real_score}")
+
+                    if ai_score and real_score:
+                        if ai_score > real_score:
+                            obj.prediction = 'AI'
+                            obj.confidence = round(ai_score * 100, 2)
+                        else:
+                            obj.prediction = 'REAL'
+                            obj.confidence = round(real_score * 100, 2)
+                    else:
+                        # fallback to top result
+                        top   = results[0]
+                        label = top['label'].lower()
+                        obj.prediction = 'AI' if any(w in label for w in ['artificial', 'fake', 'ai', 'generated', 'synthetic']) else 'REAL'
+                        obj.confidence = round(top['score'] * 100, 2)
+
+                    print(f"✅ Final: {obj.prediction} ({obj.confidence}%)")
                 else:
                     obj.prediction = 'No Model'
                     obj.confidence = 0.0
