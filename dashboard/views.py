@@ -1,10 +1,18 @@
+import os
+from functools import lru_cache
+
 import cv2
 import numpy as np
-import os
-from django.shortcuts import render, redirect, get_object_or_404
+from PIL import Image
+from django.contrib import messages
+from django.contrib.auth import login
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.views import LoginView, LogoutView
 from django.db.models import Avg
+from django.shortcuts import get_object_or_404, redirect, render
+
+from .forms import ImageUploadForm, LoginForm, RegisterForm
 from .models import ImageAnalysis
-from .forms import ImageUploadForm
 
 DEFAULT_MODEL = os.getenv("SECURELENS_MODEL", "umm-maybe/AI-image-detector")
 
@@ -17,11 +25,11 @@ def classify_prediction(results):
     real_keywords = ('real', 'human', 'authentic', 'natural')
 
     ai_score = max(
-        (r['score'] for r in results if any(word in r['label'].lower() for word in ai_keywords)),
+        (result['score'] for result in results if any(word in result['label'].lower() for word in ai_keywords)),
         default=None,
     )
     real_score = max(
-        (r['score'] for r in results if any(word in r['label'].lower() for word in real_keywords)),
+        (result['score'] for result in results if any(word in result['label'].lower() for word in real_keywords)),
         default=None,
     )
 
@@ -35,88 +43,135 @@ def classify_prediction(results):
     prediction = 'AI' if any(word in label for word in ai_keywords) else 'REAL'
     return prediction, round(top['score'] * 100, 2)
 
+
+@lru_cache(maxsize=1)
 def load_model():
     try:
         from transformers import pipeline
-        detector = pipeline(
-            "image-classification",
-            model=DEFAULT_MODEL
-        )
+
+        detector = pipeline("image-classification", model=DEFAULT_MODEL)
         print(f"✅ Model loaded: {DEFAULT_MODEL}")
         return detector
-    except Exception as e:
-        print(f"❌ Model load error: {e}")
+    except Exception as error:
+        print(f"❌ Model load error: {error}")
         return None
 
+
+def landing_context(request):
+    analyses = ImageAnalysis.objects.all().order_by('-uploaded_at')
+    recent = analyses[:6]
+    return {
+        'analyses': recent,
+        'total': analyses.count(),
+        'real_count': analyses.filter(prediction='REAL').count(),
+        'ai_count': analyses.filter(prediction='AI').count(),
+        'avg_confidence': analyses.aggregate(avg=Avg('confidence'))['avg'] or 0,
+        'user_total': request.user.analyses.count() if request.user.is_authenticated else 0,
+    }
+
+
 def home(request):
-    analyses   = ImageAnalysis.objects.all().order_by('-uploaded_at')[:10]
-    total      = ImageAnalysis.objects.count()
-    real_count = ImageAnalysis.objects.filter(prediction='REAL').count()
-    ai_count   = ImageAnalysis.objects.filter(prediction='AI').count()
-    no_model   = ImageAnalysis.objects.filter(prediction='No Model').count()
-    return render(request, 'dashboard/home.html', {
-        'analyses':   analyses,
-        'total':      total,
-        'real_count': real_count,
-        'ai_count':   ai_count,
-        'no_model':   no_model,
+    return render(request, 'dashboard/home.html', landing_context(request))
+
+
+def register(request):
+    if request.user.is_authenticated:
+        return redirect('home')
+
+    form = RegisterForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        user = form.save()
+        login(request, user)
+        messages.success(request, 'Your SecureLens workspace is ready.')
+        return redirect('analyze')
+    return render(request, 'dashboard/auth.html', {'form': form, 'title': 'Create your SecureLens account', 'submit_label': 'Create account'})
+
+
+class SecureLensLoginView(LoginView):
+    template_name = 'dashboard/auth.html'
+    authentication_form = LoginForm
+    redirect_authenticated_user = True
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({'title': 'Welcome back to SecureLens', 'submit_label': 'Sign in'})
+        return context
+
+
+class SecureLensLogoutView(LogoutView):
+    next_page = 'home'
+
+
+@login_required
+def analyze(request):
+    form = ImageUploadForm(request.POST or None, request.FILES or None)
+    if request.method == 'POST' and form.is_valid():
+        obj = form.save(commit=False)
+        obj.owner = request.user
+        obj.save()
+
+        img = cv2.imread(obj.image.path)
+        if img is not None:
+            obj.mean_pixel = float(np.mean(img))
+            obj.std_pixel = float(np.std(img))
+
+        try:
+            detector = load_model()
+            if detector:
+                pil_img = Image.open(obj.image.path).convert('RGB')
+                results = detector(pil_img)
+                obj.prediction, obj.confidence = classify_prediction(results)
+            else:
+                obj.prediction = 'No Model'
+                obj.confidence = 0.0
+        except Exception as error:
+            print(f"❌ Prediction error: {error}")
+            obj.prediction = 'Error'
+            obj.confidence = 0.0
+
+        obj.save()
+        messages.success(request, 'Image analyzed and saved to your workspace.')
+        return redirect('result', pk=obj.pk)
+
+    return render(request, 'dashboard/analyze.html', {
+        'form': form,
+        'analysis_count': request.user.analyses.count(),
     })
 
-def analyze(request):
-    if request.method == 'POST':
-        form = ImageUploadForm(request.POST, request.FILES)
-        if form.is_valid():
-            obj = form.save()
-            img = cv2.imread(obj.image.path)
-            obj.mean_pixel = float(np.mean(img))
-            obj.std_pixel  = float(np.std(img))
 
-            try:
-                from PIL import Image
-                detector = load_model()
-                if detector:
-                    pil_img = Image.open(obj.image.path).convert('RGB')
-                    results = detector(pil_img)
-                    print(f"Raw results: {results}")
-                    obj.prediction, obj.confidence = classify_prediction(results)
-
-                    print(f"✅ Final: {obj.prediction} ({obj.confidence}%)")
-                else:
-                    obj.prediction = 'No Model'
-                    obj.confidence = 0.0
-            except Exception as e:
-                print(f"❌ Prediction error: {e}")
-                obj.prediction = 'Error'
-                obj.confidence = 0.0
-
-            obj.save()
-            return redirect('result', pk=obj.pk)
-    else:
-        form = ImageUploadForm()
-    return render(request, 'dashboard/analyze.html', {'form': form})
-
+@login_required
 def result(request, pk):
-    obj = get_object_or_404(ImageAnalysis, pk=pk)
+    obj = get_object_or_404(ImageAnalysis, pk=pk, owner=request.user)
     return render(request, 'dashboard/result.html', {'obj': obj})
 
+
+@login_required
 def history(request):
-    analyses = ImageAnalysis.objects.all().order_by('-uploaded_at')
+    analyses = request.user.analyses.all().order_by('-uploaded_at')
     return render(request, 'dashboard/history.html', {'analyses': analyses})
 
+
+@login_required
 def delete(request, pk):
-    obj = get_object_or_404(ImageAnalysis, pk=pk)
-    obj.image.delete()
+    obj = get_object_or_404(ImageAnalysis, pk=pk, owner=request.user)
+    obj.image.delete(save=False)
     obj.delete()
+    messages.info(request, 'Analysis removed from your workspace.')
     return redirect('history')
 
+
+@login_required
 def stats(request):
-    total          = ImageAnalysis.objects.count()
-    real_count     = ImageAnalysis.objects.filter(prediction='REAL').count()
-    ai_count       = ImageAnalysis.objects.filter(prediction='AI').count()
-    avg_confidence = ImageAnalysis.objects.aggregate(Avg('confidence'))['confidence__avg'] or 0
+    analyses = request.user.analyses.all()
+    total = analyses.count()
+    real_count = analyses.filter(prediction='REAL').count()
+    ai_count = analyses.filter(prediction='AI').count()
+    avg_confidence = analyses.aggregate(Avg('confidence'))['confidence__avg'] or 0
+    latest = analyses.order_by('-uploaded_at')[:5]
     return render(request, 'dashboard/stats.html', {
-        'total':          total,
-        'real_count':     real_count,
-        'ai_count':       ai_count,
+        'total': total,
+        'real_count': real_count,
+        'ai_count': ai_count,
         'avg_confidence': avg_confidence,
+        'latest': latest,
     })

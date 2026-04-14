@@ -1,67 +1,115 @@
 {% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Analyze{% endblock %}
 {% block content %}
-<p class="page-title">🔍 Analyze Image</p>
+<section class="hero">
+    <div>
+        <div class="eyebrow">Private workspace</div>
+        <h1>Upload an image and save the verdict to your account.</h1>
+        <p class="lead">
+            Each image you analyze is saved to your SecureLens history, so you can revisit confidence scores and compare
+            future detector improvements against earlier uploads.
+        </p>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <div class="metric-number">{{ analysis_count }}</div>
+                <div>Images in your personal database</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">24/7</div>
+                <div>Access to your saved analysis history</div>
+            </div>
+        </div>
+    </div>
+    <div class="hero-card">
+        <div class="eyebrow">Ready to upload</div>
+        <h3 style="margin:0;">Supported inputs</h3>
+        <ul class="list">
+            <li>Single image uploads using JPG, PNG, or WEBP formats.</li>
+            <li>Random online images downloaded locally and tested through the same flow.</li>
+            <li>Automatic saving of prediction, confidence, and image statistics.</li>
+        </ul>
+    </div>
+</section>
 
-<div class="card">
-    <form method="POST" enctype="multipart/form-data" id="upload-form">
-        {% csrf_token %}
-        <div class="drop-zone" id="drop-zone">
-            <div class="icon">📁</div>
-            <p>Drag & drop an image here or</p>
-            <label class="btn btn-primary" style="cursor:pointer;">
-                Browse File
-                <input type="file" name="image" id="file-input" accept="image/*" style="display:none;" required>
-            </label>
-            <p style="margin-top:10px; font-size:12px; color:#555;">Supports JPG, PNG, WEBP</p>
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Analyze a new image</h2>
+            <span class="muted">Your result is saved the moment analysis completes.</span>
         </div>
-        <img id="preview" src="" alt="Preview">
-        <div style="text-align:center; margin-top:20px;">
-            <button type="submit" class="btn btn-primary" id="submit-btn" style="display:none; font-size:16px; padding:14px 40px;">
-                🔍 Analyze Now
-            </button>
+        <form method="post" enctype="multipart/form-data" id="upload-form">
+            {% csrf_token %}
+            <div class="drop-zone" id="drop-zone">
+                <div class="eyebrow">Drag, drop, or browse</div>
+                <h3 style="margin:0 0 10px;">Upload any image you want to inspect</h3>
+                <p class="muted">SecureLens will store the file, run the detector, and attach the result to your account.</p>
+                {{ form.image }}
+                <label for="{{ form.image.id_for_label }}" class="btn btn-primary" style="margin-top:16px;">Choose image</label>
+                {% if form.image.errors %}
+                    <ul class="errorlist">
+                        {% for error in form.image.errors %}
+                            <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+                <div class="preview" id="preview">
+                    <img id="preview-image" src="" alt="Image preview">
+                </div>
+            </div>
+            <div class="button-row">
+                <button type="submit" class="btn btn-primary">Run SecureLens analysis</button>
+                <a href="{% url 'history' %}" class="btn btn-secondary">Open my history</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="panel">
+        <div class="section-head">
+            <h2>What gets saved</h2>
         </div>
-    </form>
-</div>
+        <ul class="list">
+            <li>Image file in your media storage</li>
+            <li>Predicted label: AI, REAL, or fallback status</li>
+            <li>Confidence score from the selected model</li>
+            <li>Mean and standard deviation statistics for quick reference</li>
+        </ul>
+    </div>
+</section>
 
 <script>
-    const dropZone   = document.getElementById('drop-zone');
-    const fileInput  = document.getElementById('file-input');
-    const preview    = document.getElementById('preview');
-    const submitBtn  = document.getElementById('submit-btn');
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('{{ form.image.id_for_label }}');
+    const preview = document.getElementById('preview');
+    const previewImage = document.getElementById('preview-image');
 
-    function showPreview(file) {
+    function updatePreview(file) {
+        if (!file || !file.type.startsWith('image/')) return;
         const reader = new FileReader();
-        reader.onload = e => {
-            preview.src = e.target.result;
+        reader.onload = (event) => {
+            previewImage.src = event.target.result;
             preview.style.display = 'block';
-            submitBtn.style.display = 'inline-block';
         };
         reader.readAsDataURL(file);
     }
 
-    fileInput.addEventListener('change', e => {
-        if (e.target.files[0]) showPreview(e.target.files[0]);
-    });
+    fileInput.addEventListener('change', (event) => updatePreview(event.target.files[0]));
 
-    dropZone.addEventListener('dragover', e => {
-        e.preventDefault();
+    dropZone.addEventListener('dragover', (event) => {
+        event.preventDefault();
         dropZone.classList.add('dragover');
     });
 
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('dragover');
-    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
 
-    dropZone.addEventListener('drop', e => {
-        e.preventDefault();
+    dropZone.addEventListener('drop', (event) => {
+        event.preventDefault();
         dropZone.classList.remove('dragover');
-        const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) {
-            const dt = new DataTransfer();
-            dt.items.add(file);
-            fileInput.files = dt.files;
-            showPreview(file);
-        }
+        const file = event.dataTransfer.files[0];
+        if (!file) return;
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        fileInput.files = transfer.files;
+        updatePreview(file);
     });
 </script>
 {% endblock %}

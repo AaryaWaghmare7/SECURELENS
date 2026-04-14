@@ -1,34 +1,88 @@
 {% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Stats{% endblock %}
 {% block content %}
-<p class="page-title">📊 Statistics</p>
+<section class="hero">
+    <div>
+        <div class="eyebrow">User insights</div>
+        <h1>See how your SecureLens predictions are distributed.</h1>
+        <p class="lead">
+            This page turns your saved image history into a quick profile of how often you are seeing real imagery, AI
+            imagery, and what confidence range the detector is operating in.
+        </p>
+    </div>
+    <div class="hero-card">
+        <div class="eyebrow">Summary</div>
+        <div class="metric-number">{{ total }}</div>
+        <div class="muted">Total personal uploads</div>
+        <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
+        <div class="muted">Average confidence</div>
+    </div>
+</section>
 
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-    <div class="card">
-        <h3 style="color:#00e5ff; margin-bottom:20px;">Real vs AI Distribution</h3>
-        <canvas id="pieChart"></canvas>
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Prediction mix</h2>
+        </div>
+        <canvas id="pieChart" style="max-height:340px;"></canvas>
     </div>
-    <div class="card">
-        <h3 style="color:#00e5ff; margin-bottom:20px;">Summary</h3>
-        <table>
-            <tr>
-                <td style="padding:12px 0; color:#888;">Total Analyzed</td>
-                <td style="font-weight:bold; font-size:18px;">{{ total }}</td>
-            </tr>
-            <tr>
-                <td style="padding:12px 0; color:#00ff88;">Real Images</td>
-                <td style="font-weight:bold; font-size:18px; color:#00ff88;">{{ real_count }}</td>
-            </tr>
-            <tr>
-                <td style="padding:12px 0; color:#ff4444;">AI Images</td>
-                <td style="font-weight:bold; font-size:18px; color:#ff4444;">{{ ai_count }}</td>
-            </tr>
-            <tr>
-                <td style="padding:12px 0; color:#888;">Avg Confidence</td>
-                <td style="font-weight:bold; font-size:18px;">{{ avg_confidence|floatformat:2 }}</td>
-            </tr>
-        </table>
+
+    <div class="panel">
+        <div class="section-head">
+            <h2>Breakdown</h2>
+        </div>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <div class="metric-number">{{ real_count }}</div>
+                <div>Real classifications</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ ai_count }}</div>
+                <div>AI classifications</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ total }}</div>
+                <div>Total analyzed</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
+                <div>Average confidence</div>
+            </div>
+        </div>
     </div>
-</div>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Latest saved analyses</h2>
+    </div>
+    {% if latest %}
+        <div class="table-wrap">
+            <table>
+                <tr>
+                    <th>Image</th>
+                    <th>Prediction</th>
+                    <th>Confidence</th>
+                    <th>Saved at</th>
+                </tr>
+                {% for item in latest %}
+                    <tr>
+                        <td><img class="thumb" src="{{ item.image.url }}" alt="Saved image"></td>
+                        <td>
+                            <span class="badge {% if item.prediction == 'REAL' %}badge-real{% elif item.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
+                                {{ item.prediction|default:"Pending" }}
+                            </span>
+                        </td>
+                        <td>{{ item.confidence|floatformat:2 }}%</td>
+                        <td class="muted">{{ item.uploaded_at|date:"M d, Y H:i" }}</td>
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
+    {% else %}
+        <p class="muted">Analyze an image to populate this chart and summary.</p>
+    {% endif %}
+</section>
 
 <script>
     const ctx = document.getElementById('pieChart').getContext('2d');
@@ -38,14 +92,19 @@
             labels: ['Real', 'AI'],
             datasets: [{
                 data: [{{ real_count }}, {{ ai_count }}],
-                backgroundColor: ['#00ff8880', '#ff444480'],
-                borderColor:     ['#00ff88',   '#ff4444'],
+                backgroundColor: ['rgba(34, 197, 94, 0.65)', 'rgba(249, 115, 22, 0.68)'],
+                borderColor: ['#15803d', '#b91c1c'],
                 borderWidth: 2
             }]
         },
         options: {
             plugins: {
-                legend: { labels: { color: '#fff', font: { size: 14 } } }
+                legend: {
+                    labels: {
+                        color: '#172121',
+                        font: { size: 13 }
+                    }
+                }
             }
         }
     });

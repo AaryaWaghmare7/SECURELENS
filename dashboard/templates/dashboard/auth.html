@@ -1,0 +1,59 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Access{% endblock %}
+{% block content %}
+<section class="auth-shell">
+    <div class="panel auth-showcase">
+        <div class="eyebrow">Secure access</div>
+        <h1 style="max-width:12ch;">Build your own image authenticity workspace.</h1>
+        <p class="lead">
+            Sign in to keep your uploads, predictions, and analysis history tied to your own profile. This makes SecureLens
+            feel like a proper product instead of a one-off demo.
+        </p>
+        <ul class="list">
+            <li>Each user gets a private history of uploaded images and verdicts.</li>
+            <li>Predictions, confidence, and image stats are saved in the database automatically.</li>
+            <li>The same account can be used locally now and on a deployed website later.</li>
+        </ul>
+    </div>
+
+    <div class="panel auth-panel">
+        <div class="section-head">
+            <h2>{{ title }}</h2>
+        </div>
+        <form method="post" class="form-grid">
+            {% csrf_token %}
+            {% for field in form %}
+                <div class="form-group">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}
+                        <div class="muted" style="margin-top:8px; font-size:0.88rem;">{{ field.help_text|safe }}</div>
+                    {% endif %}
+                    {% if field.errors %}
+                        <ul class="errorlist">
+                            {% for error in field.errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    {% endif %}
+                </div>
+            {% endfor %}
+            {% if form.non_field_errors %}
+                <ul class="errorlist">
+                    {% for error in form.non_field_errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+            <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+        </form>
+        <div class="footer-note" style="margin-top:16px;">
+            {% if request.resolver_match.url_name == 'login' %}
+                New here? <a href="{% url 'register' %}" style="color:var(--brand-deep);">Create an account</a>
+            {% else %}
+                Already have an account? <a href="{% url 'login' %}" style="color:var(--brand-deep);">Sign in</a>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,49 +1,77 @@
 {% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Result{% endblock %}
 {% block content %}
-<p class="page-title">📊 Analysis Result</p>
-
-<div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-    <div class="card" style="text-align:center;">
-        <img src="{{ obj.image.url }}" style="max-width:100%; border-radius:10px; margin-bottom:20px;">
-        <span class="badge {% if obj.prediction == 'REAL' %}badge-real{% elif obj.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}"
-              style="font-size:18px; padding:8px 24px;">
-            {{ obj.prediction }}
+<section class="hero">
+    <div>
+        <div class="eyebrow">Analysis complete</div>
+        <h1>Your image has been scored and saved.</h1>
+        <p class="lead">
+            SecureLens stores this result in your personal history so you can compare later experiments, model changes,
+            and confidence trends without losing earlier uploads.
+        </p>
+        <div class="button-row">
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Analyze another image</a>
+            <a href="{% url 'history' %}" class="btn btn-secondary">View my history</a>
+        </div>
+    </div>
+    <div class="hero-card">
+        <div class="eyebrow">Verdict</div>
+        <span class="badge {% if obj.prediction == 'REAL' %}badge-real{% elif obj.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}" style="width:max-content;">
+            {{ obj.prediction|default:"Pending" }}
         </span>
+        <div class="metric-number" style="color:{% if obj.prediction == 'REAL' %}var(--real){% elif obj.prediction == 'AI' %}var(--ai){% else %}var(--muted){% endif %};">
+            {{ obj.confidence|floatformat:2 }}%
+        </div>
+        <div class="muted">Confidence score</div>
+        <div class="confidence-bar">
+            <div class="confidence-fill {% if obj.prediction == 'REAL' %}fill-real{% elif obj.prediction == 'AI' %}fill-ai{% else %}fill-none{% endif %}" style="width:{{ obj.confidence|default:0|floatformat:0 }}%;"></div>
+        </div>
+    </div>
+</section>
+
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Uploaded image</h2>
+        </div>
+        <img src="{{ obj.image.url }}" alt="Analyzed image" style="width:100%; border-radius:24px; border:1px solid rgba(23,33,33,0.08);">
     </div>
 
-    <div>
-        <div class="card">
-            <h3 style="color:#00e5ff; margin-bottom:20px;">Detection Details</h3>
-            <p style="margin-bottom:8px;">Confidence Score</p>
-            <div style="font-size:28px; font-weight:bold; color:{% if obj.prediction == 'REAL' %}#00ff88{% else %}#ff4444{% endif %}">
-                {{ obj.confidence|floatformat:2 }}%
-            </div>
-            <div class="confidence-bar" style="height:14px; margin-top:10px; margin-bottom:20px;">
-                <div class="confidence-fill {% if obj.prediction == 'REAL' %}fill-real{% else %}fill-ai{% endif %}"
-                     style="width:{{ obj.confidence|floatformat:0 }}%"></div>
-            </div>
-
-            <table style="font-size:14px;">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Detection details</h2>
+        </div>
+        <div class="table-wrap">
+            <table>
                 <tr>
-                    <td style="color:#888; padding:8px 0;">Mean Pixel</td>
-                    <td style="font-weight:bold;">{{ obj.mean_pixel|floatformat:2 }}</td>
+                    <th>Field</th>
+                    <th>Value</th>
                 </tr>
                 <tr>
-                    <td style="color:#888; padding:8px 0;">Std Deviation</td>
-                    <td style="font-weight:bold;">{{ obj.std_pixel|floatformat:2 }}</td>
+                    <td>Prediction</td>
+                    <td>{{ obj.prediction }}</td>
                 </tr>
                 <tr>
-                    <td style="color:#888; padding:8px 0;">Analyzed At</td>
-                    <td style="font-weight:bold;">{{ obj.uploaded_at|date:"M d, Y H:i" }}</td>
+                    <td>Confidence</td>
+                    <td>{{ obj.confidence|floatformat:2 }}%</td>
+                </tr>
+                <tr>
+                    <td>Mean pixel</td>
+                    <td>{{ obj.mean_pixel|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Std deviation</td>
+                    <td>{{ obj.std_pixel|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Saved at</td>
+                    <td>{{ obj.uploaded_at|date:"M d, Y H:i" }}</td>
                 </tr>
             </table>
         </div>
-
-        <div style="display:flex; gap:10px; margin-top:10px;">
-            <a href="/analyze/" class="btn btn-primary">🔍 Analyze Another</a>
-            <a href="/history/delete/{{ obj.pk }}/" class="btn btn-danger">🗑️ Delete</a>
-            <a href="/" class="btn btn-secondary">🏠 Home</a>
+        <div class="button-row">
+            <a href="{% url 'delete' obj.pk %}" class="btn btn-danger">Delete this analysis</a>
         </div>
     </div>
-</div>
+</section>
 {% endblock %}

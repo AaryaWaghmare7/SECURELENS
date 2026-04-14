@@ -1,63 +1,118 @@
 {% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Home{% endblock %}
 {% block content %}
-<p class="page-title">🏠 Dashboard</p>
+<section class="hero">
+    <div>
+        <div class="eyebrow">Forensics-ready detection</div>
+        <h1>Check whether an image feels real or machine-made.</h1>
+        <p class="lead">
+            SecureLens turns image uploads into a clean authenticity workspace. Users can sign in, upload random images,
+            save results to their own dashboard, and review model confidence over time.
+        </p>
+        <div class="hero-actions">
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Start analyzing</a>
+            {% if not request.user.is_authenticated %}
+                <a href="{% url 'register' %}" class="btn btn-secondary">Create your account</a>
+            {% else %}
+                <a href="{% url 'history' %}" class="btn btn-secondary">Open my workspace</a>
+            {% endif %}
+        </div>
 
-<div class="card-grid">
-    <div class="stat-card">
-        <div class="number">{{ total }}</div>
-        <div class="label">Total Analyzed</div>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <div class="metric-number">{{ total }}</div>
+                <div>Images processed across SecureLens</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ ai_count }}</div>
+                <div>Marked as AI-generated</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ real_count }}</div>
+                <div>Marked as real imagery</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
+                <div>Average confidence score</div>
+            </div>
+        </div>
     </div>
-    <div class="stat-card">
-        <div class="number" style="color:#00ff88;">{{ real_count }}</div>
-        <div class="label">Real Images</div>
-    </div>
-    <div class="stat-card">
-        <div class="number" style="color:#ff4444;">{{ ai_count }}</div>
-        <div class="label">AI Images</div>
-    </div>
-    <div class="stat-card">
-        <div class="number" style="color:#ffaa00;">{{ no_model }}</div>
-        <div class="label">Undetected</div>
-    </div>
-</div>
 
-<div class="card">
-    <h3 style="margin-bottom:15px; color:#00e5ff;">Recent Analyses</h3>
-    {% if analyses %}
-    <table>
-        <tr>
-            <th>Image</th>
-            <th>Verdict</th>
-            <th>Confidence</th>
-            <th>Mean</th>
-            <th>Std Dev</th>
-            <th>Date</th>
-        </tr>
-        {% for item in analyses %}
-        <tr>
-            <td><img src="{{ item.image.url }}" width="50" height="50" style="border-radius:6px; object-fit:cover;"></td>
-            <td>
-                <span class="badge {% if item.prediction == 'REAL' %}badge-real{% elif item.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
-                    {{ item.prediction }}
-                </span>
-            </td>
-            <td>
-                <div style="min-width:120px;">
-                    {{ item.confidence|floatformat:2 }}
-                    <div class="confidence-bar">
-                        <div class="confidence-fill {% if item.prediction == 'REAL' %}fill-real{% else %}fill-ai{% endif %}"
-                             style="width:{{ item.confidence|floatformat:0 }}%"></div>
-                    </div>
-                </div>
-            </td>
-            <td>{{ item.mean_pixel|floatformat:1 }}</td>
-            <td>{{ item.std_pixel|floatformat:1 }}</td>
-            <td style="color:#888; font-size:12px;">{{ item.uploaded_at|date:"M d, Y H:i" }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-    {% else %}
-    <p style="color:#888; text-align:center; padding:30px;">No analyses yet. <a href="/analyze/" style="color:#00e5ff;">Analyze your first image!</a></p>
-    {% endif %}
-</div>
+    <aside class="hero-card">
+        <div>
+            <div class="eyebrow">Your workspace</div>
+            <h3 style="margin:0 0 10px;">Built for serious project demos</h3>
+            <p class="muted">
+                Account-based history, saved uploads, confidence summaries, and a cleaner portfolio-ready interface.
+            </p>
+        </div>
+        <ul class="list">
+            <li>Upload JPG, PNG, or WEBP images for AI-vs-real prediction.</li>
+            <li>Each signed-in user gets their own saved analysis history.</li>
+            <li>Track confidence and revisit earlier verdicts in one place.</li>
+        </ul>
+        <div class="metric-card" style="background: rgba(15, 118, 110, 0.08);">
+            <div class="muted">Your analyses</div>
+            <div class="metric-number">{{ user_total }}</div>
+            <div>{% if request.user.is_authenticated %}Saved in your account{% else %}Create an account to start saving{% endif %}</div>
+        </div>
+    </aside>
+</section>
+
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Recent platform analyses</h2>
+            <span class="muted">A live snapshot of recent predictions</span>
+        </div>
+        {% if analyses %}
+            <div class="table-wrap">
+                <table>
+                    <tr>
+                        <th>Image</th>
+                        <th>Verdict</th>
+                        <th>Confidence</th>
+                        <th>Captured</th>
+                    </tr>
+                    {% for item in analyses %}
+                        <tr>
+                            <td>
+                                <img class="thumb" src="{{ item.image.url }}" alt="Uploaded image">
+                            </td>
+                            <td>
+                                <span class="badge {% if item.prediction == 'REAL' %}badge-real{% elif item.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
+                                    {{ item.prediction|default:"Pending" }}
+                                </span>
+                            </td>
+                            <td style="min-width:160px;">
+                                {{ item.confidence|floatformat:2 }}%
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill {% if item.prediction == 'REAL' %}fill-real{% elif item.prediction == 'AI' %}fill-ai{% else %}fill-none{% endif %}" style="width:{{ item.confidence|default:0|floatformat:0 }}%;"></div>
+                                </div>
+                            </td>
+                            <td class="muted">{{ item.uploaded_at|date:"M d, Y H:i" }}</td>
+                        </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        {% else %}
+            <p class="muted">No uploads yet. The first saved image will appear here.</p>
+        {% endif %}
+    </div>
+
+    <div class="panel">
+        <div class="section-head">
+            <h2>How it works</h2>
+        </div>
+        <ul class="list">
+            <li>Create an account so each upload is tied to your own profile and database history.</li>
+            <li>Upload a random image and let SecureLens compute model predictions and image statistics.</li>
+            <li>Review the verdict, confidence, and your personal analysis history from any later session.</li>
+        </ul>
+        <div class="button-row">
+            <a href="{% url 'register' %}" class="btn btn-primary">Create account</a>
+            <a href="{% url 'login' %}" class="btn btn-secondary">Sign in</a>
+        </div>
+    </div>
+</section>
 {% endblock %}

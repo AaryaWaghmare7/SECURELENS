@@ -1,5 +1,12 @@
+dj-database-url
+django
+gunicorn
+matplotlib
 numpy
 opencv-python
-matplotlib
-tensorflow
 pillow
+psycopg[binary]
+tensorflow
+torch
+transformers
+whitenoise

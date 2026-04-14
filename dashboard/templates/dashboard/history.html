@@ -1,43 +1,76 @@
 {% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | History{% endblock %}
 {% block content %}
-<p class="page-title">📋 Analysis History</p>
+<section class="hero">
+    <div>
+        <div class="eyebrow">Personal archive</div>
+        <h1>Everything you have analyzed, saved in one place.</h1>
+        <p class="lead">
+            This history is scoped to your account, which makes SecureLens feel more like a real product and gives you
+            a persistent database of uploads to compare over time.
+        </p>
+    </div>
+    <div class="hero-card">
+        <div class="eyebrow">At a glance</div>
+        <div class="metric-number">{{ analyses|length }}</div>
+        <div class="muted">Saved analyses in your workspace</div>
+        <div class="button-row">
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Analyze a new image</a>
+        </div>
+    </div>
+</section>
 
-<div class="card">
+<section class="section panel">
+    <div class="section-head">
+        <h2>Saved analysis history</h2>
+        <span class="muted">Only your own uploads appear here.</span>
+    </div>
     {% if analyses %}
-    <table>
-        <tr>
-            <th>Image</th>
-            <th>Verdict</th>
-            <th>Confidence</th>
-            <th>Mean</th>
-            <th>Std Dev</th>
-            <th>Date</th>
-            <th>Action</th>
-        </tr>
-        {% for item in analyses %}
-        <tr>
-            <td><img src="{{ item.image.url }}" width="60" height="60" style="border-radius:6px; object-fit:cover;"></td>
-            <td>
-                <span class="badge {% if item.prediction == 'REAL' %}badge-real{% elif item.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
-                    {{ item.prediction }}
-                </span>
-            </td>
-            <td>
-                {{ item.confidence|floatformat:2 }}
-                <div class="confidence-bar">
-                    <div class="confidence-fill {% if item.prediction == 'REAL' %}fill-real{% else %}fill-ai{% endif %}"
-                         style="width:{{ item.confidence|floatformat:0 }}%"></div>
-                </div>
-            </td>
-            <td>{{ item.mean_pixel|floatformat:1 }}</td>
-            <td>{{ item.std_pixel|floatformat:1 }}</td>
-            <td style="color:#888; font-size:12px;">{{ item.uploaded_at|date:"M d, Y H:i" }}</td>
-            <td><a href="/history/delete/{{ item.pk }}/" class="btn btn-danger" style="padding:6px 14px; font-size:12px;">🗑️</a></td>
-        </tr>
-        {% endfor %}
-    </table>
+        <div class="table-wrap">
+            <table>
+                <tr>
+                    <th>Image</th>
+                    <th>Verdict</th>
+                    <th>Confidence</th>
+                    <th>Statistics</th>
+                    <th>Saved</th>
+                    <th>Action</th>
+                </tr>
+                {% for item in analyses %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'result' item.pk %}">
+                                <img class="thumb" src="{{ item.image.url }}" alt="Analyzed image">
+                            </a>
+                        </td>
+                        <td>
+                            <span class="badge {% if item.prediction == 'REAL' %}badge-real{% elif item.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
+                                {{ item.prediction|default:"Pending" }}
+                            </span>
+                        </td>
+                        <td style="min-width:170px;">
+                            {{ item.confidence|floatformat:2 }}%
+                            <div class="confidence-bar">
+                                <div class="confidence-fill {% if item.prediction == 'REAL' %}fill-real{% elif item.prediction == 'AI' %}fill-ai{% else %}fill-none{% endif %}" style="width:{{ item.confidence|default:0|floatformat:0 }}%;"></div>
+                            </div>
+                        </td>
+                        <td class="muted">
+                            Mean {{ item.mean_pixel|floatformat:1 }}<br>
+                            Std {{ item.std_pixel|floatformat:1 }}
+                        </td>
+                        <td class="muted">{{ item.uploaded_at|date:"M d, Y H:i" }}</td>
+                        <td>
+                            <a class="btn btn-secondary" href="{% url 'result' item.pk %}">Open</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
     {% else %}
-    <p style="color:#888; text-align:center; padding:30px;">No history yet. <a href="/analyze/" style="color:#00e5ff;">Analyze your first image!</a></p>
+        <p class="muted">No analyses yet. Start by uploading your first image.</p>
+        <div class="button-row">
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Analyze now</a>
+        </div>
     {% endif %}
-</div>
+</section>
 {% endblock %}
