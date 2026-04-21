@@ -4,28 +4,28 @@
 <section class="hero">
     <div>
         <div class="eyebrow">Forensics-ready detection</div>
-        <h1>Check whether an image feels real or machine-made.</h1>
+        <h1>See what an image is hiding before you trust it.</h1>
         <p class="lead">
-            SecureLens turns image uploads into a clean authenticity workspace. Users can sign in, upload random images,
-            save results to their own dashboard, and review model confidence over time.
+            SecureLens turns image uploads into a sharper authenticity workspace with saved analysis history, confidence-led verdicts,
+            and a cleaner experience that feels much closer to a real product showcase.
         </p>
         <div class="hero-actions">
             <a href="{% url 'analyze' %}" class="btn btn-primary">Start analyzing</a>
-            {% if not request.user.is_authenticated %}
-                <a href="{% url 'register' %}" class="btn btn-secondary">Create your account</a>
-            {% else %}
+            {% if request.user.is_authenticated %}
                 <a href="{% url 'history' %}" class="btn btn-secondary">Open my workspace</a>
+            {% else %}
+                <a href="{% url 'register' %}" class="btn btn-secondary">Create your account</a>
             {% endif %}
         </div>
 
         <div class="metric-grid">
             <div class="metric-card">
                 <div class="metric-number">{{ total }}</div>
-                <div>Images processed across SecureLens</div>
+                <div>Images inspected across SecureLens</div>
             </div>
             <div class="metric-card">
                 <div class="metric-number">{{ ai_count }}</div>
-                <div>Marked as AI-generated</div>
+                <div>Flagged as AI-generated</div>
             </div>
             <div class="metric-card">
                 <div class="metric-number">{{ real_count }}</div>
@@ -40,23 +40,50 @@
 
     <aside class="hero-card">
         <div>
-            <div class="eyebrow">Your workspace</div>
-            <h3 style="margin:0 0 10px;">Built for serious project demos</h3>
+            <div class="eyebrow">Live workspace</div>
+            <p class="page-kicker">Built to feel confident, editorial, and portfolio-ready.</p>
             <p class="muted">
-                Account-based history, saved uploads, confidence summaries, and a cleaner portfolio-ready interface.
+                A more polished landing area, account-based history, and stronger visual hierarchy make the project feel more deliberate.
             </p>
         </div>
-        <ul class="list">
-            <li>Upload JPG, PNG, or WEBP images for AI-vs-real prediction.</li>
-            <li>Each signed-in user gets their own saved analysis history.</li>
-            <li>Track confidence and revisit earlier verdicts in one place.</li>
-        </ul>
-        <div class="metric-card" style="background: rgba(15, 118, 110, 0.08);">
-            <div class="muted">Your analyses</div>
-            <div class="metric-number">{{ user_total }}</div>
-            <div>{% if request.user.is_authenticated %}Saved in your account{% else %}Create an account to start saving{% endif %}</div>
+        <div class="stat-stack">
+            <div class="stat-pill">
+                <div class="muted">Your analyses</div>
+                <div class="metric-number">{{ user_total }}</div>
+            </div>
+            <div class="stat-pill">
+                <div class="muted">Current focus</div>
+                <div>Upload, review, and compare image authenticity decisions</div>
+            </div>
         </div>
     </aside>
+</section>
+
+<div class="showcase-band">
+    <span class="chip">Personal workspaces</span>
+    <span class="chip">Saved image history</span>
+    <span class="chip">Confidence-led results</span>
+    <span class="chip">Django + ML product demo</span>
+</div>
+
+<section class="section">
+    <div class="feature-grid">
+        <div class="feature-card">
+            <div class="feature-icon">01</div>
+            <h3>Account-first flow</h3>
+            <p class="muted">Every uploaded image is tied to a real user history, which makes the experience more believable and useful.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">02</div>
+            <h3>Saved verdicts</h3>
+            <p class="muted">Predictions, confidence, and image stats stay accessible so you can compare later model changes.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">03</div>
+            <h3>Clearer storytelling</h3>
+            <p class="muted">The interface now presents SecureLens more like a serious demo platform than a raw utility page.</p>
+        </div>
+    </div>
 </section>
 
 <section class="section split">
@@ -76,9 +103,7 @@
                     </tr>
                     {% for item in analyses %}
                         <tr>
-                            <td>
-                                <img class="thumb" src="{{ item.image.url }}" alt="Uploaded image">
-                            </td>
+                            <td><img class="thumb" src="{{ item.image.url }}" alt="Uploaded image"></td>
                             <td>
                                 <span class="badge {% if item.prediction == 'REAL' %}badge-real{% elif item.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
                                     {{ item.prediction|default:"Pending" }}
@@ -102,12 +127,12 @@
 
     <div class="panel">
         <div class="section-head">
-            <h2>How it works</h2>
+            <h2>How SecureLens flows</h2>
         </div>
         <ul class="list">
-            <li>Create an account so each upload is tied to your own profile and database history.</li>
-            <li>Upload a random image and let SecureLens compute model predictions and image statistics.</li>
-            <li>Review the verdict, confidence, and your personal analysis history from any later session.</li>
+            <li>Create an account so each upload is tied to your own stored history.</li>
+            <li>Upload any local image and let SecureLens compute prediction and confidence.</li>
+            <li>Review the saved result later from your own dashboard and compare decisions over time.</li>
         </ul>
         <div class="button-row">
             <a href="{% url 'register' %}" class="btn btn-primary">Create account</a>

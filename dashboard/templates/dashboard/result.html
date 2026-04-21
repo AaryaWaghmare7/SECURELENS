@@ -4,10 +4,10 @@
 <section class="hero">
     <div>
         <div class="eyebrow">Analysis complete</div>
-        <h1>Your image has been scored and saved.</h1>
+        <h1>Your image has been scored and framed like a real case file.</h1>
         <p class="lead">
-            SecureLens stores this result in your personal history so you can compare later experiments, model changes,
-            and confidence trends without losing earlier uploads.
+            The result view now feels more intentional too: stronger contrast, cleaner spacing, and a clearer hierarchy
+            around the final verdict and confidence score.
         </p>
         <div class="button-row">
             <a href="{% url 'analyze' %}" class="btn btn-primary">Analyze another image</a>
@@ -34,7 +34,9 @@
         <div class="section-head">
             <h2>Uploaded image</h2>
         </div>
-        <img src="{{ obj.image.url }}" alt="Analyzed image" style="width:100%; border-radius:24px; border:1px solid rgba(23,33,33,0.08);">
+        <div class="image-frame">
+            <img src="{{ obj.image.url }}" alt="Analyzed image" style="width:100%; border-radius:20px; display:block;">
+        </div>
     </div>
 
     <div class="panel">

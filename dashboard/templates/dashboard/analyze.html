@@ -4,47 +4,48 @@
 <section class="hero">
     <div>
         <div class="eyebrow">Private workspace</div>
-        <h1>Upload an image and save the verdict to your account.</h1>
+        <h1>Upload an image and turn it into a saved forensic snapshot.</h1>
         <p class="lead">
-            Each image you analyze is saved to your SecureLens history, so you can revisit confidence scores and compare
-            future detector improvements against earlier uploads.
+            This page now feels more like a premium intake panel: drag in an image, preview it, run the detector, and
+            keep the final verdict inside your own SecureLens history.
         </p>
         <div class="metric-grid">
             <div class="metric-card">
                 <div class="metric-number">{{ analysis_count }}</div>
-                <div>Images in your personal database</div>
+                <div>Images stored in your workspace</div>
             </div>
             <div class="metric-card">
-                <div class="metric-number">24/7</div>
-                <div>Access to your saved analysis history</div>
+                <div class="metric-number">Fast</div>
+                <div>Preview-first upload flow</div>
             </div>
         </div>
     </div>
     <div class="hero-card">
-        <div class="eyebrow">Ready to upload</div>
-        <h3 style="margin:0;">Supported inputs</h3>
+        <div class="eyebrow">Upload guidance</div>
+        <p class="page-kicker">Bring in screenshots, photos, or generated images for comparison.</p>
         <ul class="list">
-            <li>Single image uploads using JPG, PNG, or WEBP formats.</li>
-            <li>Random online images downloaded locally and tested through the same flow.</li>
-            <li>Automatic saving of prediction, confidence, and image statistics.</li>
+            <li>Supports JPG, PNG, and WEBP image files.</li>
+            <li>Stores confidence, verdict, and basic image statistics.</li>
+            <li>Keeps each analysis attached to your account history.</li>
         </ul>
     </div>
 </section>
 
-<section class="section split">
+<section class="section upload-layout">
     <div class="panel">
         <div class="section-head">
             <h2>Analyze a new image</h2>
-            <span class="muted">Your result is saved the moment analysis completes.</span>
+            <span class="muted">Saved as soon as analysis completes.</span>
         </div>
         <form method="post" enctype="multipart/form-data" id="upload-form">
             {% csrf_token %}
             <div class="drop-zone" id="drop-zone">
                 <div class="eyebrow">Drag, drop, or browse</div>
-                <h3 style="margin:0 0 10px;">Upload any image you want to inspect</h3>
-                <p class="muted">SecureLens will store the file, run the detector, and attach the result to your account.</p>
+                <h3 style="margin:0 0 10px;">Place your image inside the SecureLens scanner</h3>
+                <p class="muted">A smooth preview-first flow makes this feel more deliberate than a basic file input.</p>
                 {{ form.image }}
                 <label for="{{ form.image.id_for_label }}" class="btn btn-primary" style="margin-top:16px;">Choose image</label>
+                <div class="upload-note">Best results usually come from clear, well-lit images rather than tiny compressed files.</div>
                 {% if form.image.errors %}
                     <ul class="errorlist">
                         {% for error in form.image.errors %}
@@ -65,14 +66,22 @@
 
     <div class="panel">
         <div class="section-head">
-            <h2>What gets saved</h2>
+            <h2>What this page stores</h2>
         </div>
-        <ul class="list">
-            <li>Image file in your media storage</li>
-            <li>Predicted label: AI, REAL, or fallback status</li>
-            <li>Confidence score from the selected model</li>
-            <li>Mean and standard deviation statistics for quick reference</li>
-        </ul>
+        <div class="stat-stack">
+            <div class="glass-card">
+                <div class="page-kicker">Image file</div>
+                <div class="muted">Saved in your media storage for later review.</div>
+            </div>
+            <div class="glass-card">
+                <div class="page-kicker">Prediction</div>
+                <div class="muted">AI, REAL, or fallback status depending on the detector response.</div>
+            </div>
+            <div class="glass-card">
+                <div class="page-kicker">Confidence and stats</div>
+                <div class="muted">Useful for comparing model behavior and debugging weak classifications later.</div>
+            </div>
+        </div>
     </div>
 </section>
 
