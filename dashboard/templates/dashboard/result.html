@@ -4,10 +4,10 @@
 <section class="hero">
     <div>
         <div class="eyebrow">Analysis complete</div>
-        <h1>Your image has been scored and framed like a real case file.</h1>
+        <h1>Your image now comes back as a clearer, more polished case report.</h1>
         <p class="lead">
-            The result view now feels more intentional too: stronger contrast, cleaner spacing, and a clearer hierarchy
-            around the final verdict and confidence score.
+            This page now explains the result more clearly too. If the detector was not convinced enough, SecureLens can show uncertainty instead of
+            acting more certain than it should.
         </p>
         <div class="button-row">
             <a href="{% url 'analyze' %}" class="btn btn-primary">Analyze another image</a>
@@ -15,17 +15,18 @@
         </div>
     </div>
     <div class="hero-card">
-        <div class="eyebrow">Verdict</div>
+        <div class="eyebrow">Final verdict</div>
         <span class="badge {% if obj.prediction == 'REAL' %}badge-real{% elif obj.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}" style="width:max-content;">
             {{ obj.prediction|default:"Pending" }}
         </span>
-        <div class="metric-number" style="color:{% if obj.prediction == 'REAL' %}var(--real){% elif obj.prediction == 'AI' %}var(--ai){% else %}var(--muted){% endif %};">
+        <div class="metric-number" style="color:{% if obj.prediction == 'REAL' %}var(--real){% elif obj.prediction == 'AI' %}var(--ai){% else %}#b7761f{% endif %};">
             {{ obj.confidence|floatformat:2 }}%
         </div>
         <div class="muted">Confidence score</div>
         <div class="confidence-bar">
             <div class="confidence-fill {% if obj.prediction == 'REAL' %}fill-real{% elif obj.prediction == 'AI' %}fill-ai{% else %}fill-none{% endif %}" style="width:{{ obj.confidence|default:0|floatformat:0 }}%;"></div>
         </div>
+        <div class="footer-note" style="text-align:left;">{{ result_explanation }}</div>
     </div>
 </section>
 

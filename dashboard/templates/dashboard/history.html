@@ -3,11 +3,10 @@
 {% block content %}
 <section class="hero">
     <div>
-        <div class="eyebrow">Personal archive</div>
-        <h1>Your archive now feels more like a curated investigation log.</h1>
+        <div class="eyebrow">Saved archive</div>
+        <h1>Your history now reads more like a polished investigation log.</h1>
         <p class="lead">
-            This history is scoped to your account, which makes SecureLens feel more like a real product and gives you
-            a persistent database of uploads to compare over time.
+            This page keeps every saved analysis in one place, which is useful both for normal usage and for improving the detector later with real failure examples.
         </p>
     </div>
     <div class="hero-card">
@@ -22,9 +21,9 @@
 
 <div class="showcase-band">
     <span class="chip">Private history</span>
-    <span class="chip">Saved verdicts</span>
-    <span class="chip">Confidence replay</span>
+    <span class="chip">Saved confidence</span>
     <span class="chip">Result detail pages</span>
+    <span class="chip">Useful for debugging errors</span>
 </div>
 
 <section class="section panel">
@@ -66,9 +65,7 @@
                             Std {{ item.std_pixel|floatformat:1 }}
                         </td>
                         <td class="muted">{{ item.uploaded_at|date:"M d, Y H:i" }}</td>
-                        <td>
-                            <a class="btn btn-secondary" href="{% url 'result' item.pk %}">Open</a>
-                        </td>
+                        <td><a class="btn btn-secondary" href="{% url 'result' item.pk %}">Open</a></td>
                     </tr>
                 {% endfor %}
             </table>

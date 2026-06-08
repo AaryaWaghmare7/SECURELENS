@@ -3,30 +3,30 @@
 {% block content %}
 <section class="hero">
     <div>
-        <div class="eyebrow">Private workspace</div>
-        <h1>Upload an image and turn it into a saved forensic snapshot.</h1>
+        <div class="eyebrow">Upload studio</div>
+        <h1>Drop in an image and let SecureLens give it a sharper, more careful review.</h1>
         <p class="lead">
-            This page now feels more like a premium intake panel: drag in an image, preview it, run the detector, and
-            keep the final verdict inside your own SecureLens history.
+            The upload experience is cleaner and more like a real product flow. Underneath it, the detector is also stricter
+            about forcing an answer when the vote is too close.
         </p>
         <div class="metric-grid">
             <div class="metric-card">
                 <div class="metric-number">{{ analysis_count }}</div>
-                <div>Images stored in your workspace</div>
+                <div>Images saved in your workspace</div>
             </div>
             <div class="metric-card">
-                <div class="metric-number">Fast</div>
-                <div>Preview-first upload flow</div>
+                <div class="metric-number">3</div>
+                <div>Detector signals blended per upload</div>
             </div>
         </div>
     </div>
     <div class="hero-card">
-        <div class="eyebrow">Upload guidance</div>
-        <p class="page-kicker">Bring in screenshots, photos, or generated images for comparison.</p>
+        <div class="eyebrow">Before you upload</div>
+        <p class="page-kicker">Clearer inputs usually help the detector act less confused.</p>
         <ul class="list">
-            <li>Supports JPG, PNG, and WEBP image files.</li>
-            <li>Stores confidence, verdict, and basic image statistics.</li>
-            <li>Keeps each analysis attached to your account history.</li>
+            <li>Use JPG, PNG, or WEBP files.</li>
+            <li>Sharp, well-lit images usually give more stable results.</li>
+            <li>Ambiguous images may now return uncertain instead of a forced wrong answer.</li>
         </ul>
     </div>
 </section>
@@ -35,17 +35,19 @@
     <div class="panel">
         <div class="section-head">
             <h2>Analyze a new image</h2>
-            <span class="muted">Saved as soon as analysis completes.</span>
+            <span class="muted">Preview-first and account-linked.</span>
         </div>
         <form method="post" enctype="multipart/form-data" id="upload-form">
             {% csrf_token %}
             <div class="drop-zone" id="drop-zone">
                 <div class="eyebrow">Drag, drop, or browse</div>
                 <h3 style="margin:0 0 10px;">Place your image inside the SecureLens scanner</h3>
-                <p class="muted">A smooth preview-first flow makes this feel more deliberate than a basic file input.</p>
+                <p class="muted">The result will be saved to your history with prediction, confidence, and image stats.</p>
                 {{ form.image }}
                 <label for="{{ form.image.id_for_label }}" class="btn btn-primary" style="margin-top:16px;">Choose image</label>
-                <div class="upload-note">Best results usually come from clear, well-lit images rather than tiny compressed files.</div>
+                <div class="footer-note" style="text-align:left; margin-top:18px;">
+                    Tip: if something looks obviously fake to a human, SecureLens should now be less eager to overrule that with a weak model vote.
+                </div>
                 {% if form.image.errors %}
                     <ul class="errorlist">
                         {% for error in form.image.errors %}
@@ -66,20 +68,20 @@
 
     <div class="panel">
         <div class="section-head">
-            <h2>What this page stores</h2>
+            <h2>What gets saved</h2>
         </div>
         <div class="stat-stack">
             <div class="glass-card">
-                <div class="page-kicker">Image file</div>
-                <div class="muted">Saved in your media storage for later review.</div>
-            </div>
-            <div class="glass-card">
                 <div class="page-kicker">Prediction</div>
-                <div class="muted">AI, REAL, or fallback status depending on the detector response.</div>
+                <div class="muted">AI, REAL, or UNCERTAIN depending on how convincing the final signal actually is.</div>
             </div>
             <div class="glass-card">
-                <div class="page-kicker">Confidence and stats</div>
-                <div class="muted">Useful for comparing model behavior and debugging weak classifications later.</div>
+                <div class="page-kicker">Confidence</div>
+                <div class="muted">Shows how strongly the blended detector output leaned one way.</div>
+            </div>
+            <div class="glass-card">
+                <div class="page-kicker">Image stats</div>
+                <div class="muted">Mean pixel and deviation are stored so later experiments have a bit more context.</div>
             </div>
         </div>
     </div>

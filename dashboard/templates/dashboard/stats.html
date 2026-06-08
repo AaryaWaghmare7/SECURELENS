@@ -3,11 +3,11 @@
 {% block content %}
 <section class="hero">
     <div>
-        <div class="eyebrow">User insights</div>
-        <h1>See how your SecureLens predictions are distributed.</h1>
+        <div class="eyebrow">Your pattern view</div>
+        <h1>See how your saved results balance between real, AI, and uncertain.</h1>
         <p class="lead">
-            This page turns your saved image history into a quick profile of how often you are seeing real imagery, AI
-            imagery, and what confidence range the detector is operating in.
+            The stats page now reflects the new detector behavior too. If SecureLens does not trust the signal enough, that upload can sit in the uncertain bucket
+            instead of pretending the world is neatly binary.
         </p>
     </div>
     <div class="hero-card">
@@ -41,8 +41,8 @@
                 <div>AI classifications</div>
             </div>
             <div class="metric-card">
-                <div class="metric-number">{{ total }}</div>
-                <div>Total analyzed</div>
+                <div class="metric-number">{{ uncertain_count }}</div>
+                <div>Uncertain calls</div>
             </div>
             <div class="metric-card">
                 <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
@@ -89,11 +89,11 @@
     new Chart(ctx, {
         type: 'doughnut',
         data: {
-            labels: ['Real', 'AI'],
+            labels: ['Real', 'AI', 'Uncertain'],
             datasets: [{
-                data: [{{ real_count }}, {{ ai_count }}],
-                backgroundColor: ['rgba(34, 197, 94, 0.65)', 'rgba(249, 115, 22, 0.68)'],
-                borderColor: ['#15803d', '#b91c1c'],
+                data: [{{ real_count }}, {{ ai_count }}, {{ uncertain_count }}],
+                backgroundColor: ['rgba(255, 95, 159, 0.7)', 'rgba(139, 71, 255, 0.66)', 'rgba(255, 179, 71, 0.72)'],
+                borderColor: ['#ff5f9f', '#8b47ff', '#ffb347'],
                 borderWidth: 2
             }]
         },
@@ -101,7 +101,7 @@
             plugins: {
                 legend: {
                     labels: {
-                        color: '#172121',
+                        color: '#40233b',
                         font: { size: 13 }
                     }
                 }

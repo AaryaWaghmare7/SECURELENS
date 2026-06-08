@@ -3,6 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .models import ImageAnalysis
+from .views import classify_prediction, summarize_model_results
 
 
 class SecureLensAccessTests(TestCase):
@@ -44,3 +45,39 @@ class SecureLensAccessTests(TestCase):
         self.assertEqual(response.context['total'], 2)
         self.assertEqual(response.context['real_count'], 1)
         self.assertEqual(response.context['ai_count'], 1)
+
+
+class SecureLensPredictionTests(TestCase):
+    def test_model_summary_pulls_ai_and_real_scores(self):
+        results = [
+            {'label': 'AI generated', 'score': 0.81},
+            {'label': 'real photograph', 'score': 0.17},
+        ]
+        summary = summarize_model_results(results)
+        self.assertEqual(summary['ai_score'], 0.81)
+        self.assertEqual(summary['real_score'], 0.17)
+
+    def test_close_votes_become_uncertain(self):
+        prediction, confidence, explanation = classify_prediction(
+            [
+                {'ai_score': 0.59, 'real_score': 0.55, 'weight': 1.0},
+                {'ai_score': 0.54, 'real_score': 0.57, 'weight': 0.9},
+            ],
+            {'std_pixel': 40.0, 'edge_density': 0.03},
+        )
+        self.assertEqual(prediction, 'UNCERTAIN')
+        self.assertGreater(confidence, 50)
+        self.assertIn('too close', explanation.lower())
+
+    def test_clear_majority_returns_real(self):
+        prediction, confidence, explanation = classify_prediction(
+            [
+                {'ai_score': 0.32, 'real_score': 0.78, 'weight': 1.0},
+                {'ai_score': 0.28, 'real_score': 0.73, 'weight': 0.9},
+                {'ai_score': 0.35, 'real_score': 0.69, 'weight': 0.8},
+            ],
+            {'std_pixel': 62.0, 'edge_density': 0.09},
+        )
+        self.assertEqual(prediction, 'REAL')
+        self.assertGreater(confidence, 70)
+        self.assertIn('real photograph', explanation.lower())

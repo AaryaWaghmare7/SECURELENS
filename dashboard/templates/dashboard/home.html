@@ -3,14 +3,14 @@
 {% block content %}
 <section class="hero">
     <div>
-        <div class="eyebrow">Forensics-ready detection</div>
-        <h1>See what an image is hiding before you trust it.</h1>
+        <div class="eyebrow">Soft look, sharper judgment</div>
+        <h1>Spot suspicious images in a space that feels calm, polished, and clear.</h1>
         <p class="lead">
-            SecureLens turns image uploads into a sharper authenticity workspace with saved analysis history, confidence-led verdicts,
-            and a cleaner experience that feels much closer to a real product showcase.
+            SecureLens now has a softer visual identity, but under the surface it is also stricter about weak predictions.
+            Instead of pretending certainty, it can now say when a result is genuinely too close to call.
         </p>
         <div class="hero-actions">
-            <a href="{% url 'analyze' %}" class="btn btn-primary">Start analyzing</a>
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Try the detector</a>
             {% if request.user.is_authenticated %}
                 <a href="{% url 'history' %}" class="btn btn-secondary">Open my workspace</a>
             {% else %}
@@ -21,67 +21,67 @@
         <div class="metric-grid">
             <div class="metric-card">
                 <div class="metric-number">{{ total }}</div>
-                <div>Images inspected across SecureLens</div>
+                <div>Images reviewed so far</div>
             </div>
             <div class="metric-card">
                 <div class="metric-number">{{ ai_count }}</div>
-                <div>Flagged as AI-generated</div>
+                <div>Clearly AI-leaning uploads</div>
             </div>
             <div class="metric-card">
                 <div class="metric-number">{{ real_count }}</div>
-                <div>Marked as real imagery</div>
+                <div>Real-looking images</div>
             </div>
             <div class="metric-card">
-                <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
-                <div>Average confidence score</div>
+                <div class="metric-number">{{ uncertain_count }}</div>
+                <div>Marked uncertain instead of guessed</div>
             </div>
         </div>
     </div>
 
     <aside class="hero-card">
         <div>
-            <div class="eyebrow">Live workspace</div>
-            <p class="page-kicker">Built to feel confident, editorial, and portfolio-ready.</p>
+            <div class="eyebrow">Workspace snapshot</div>
+            <p class="page-kicker">Everything you analyze stays tied to your account.</p>
             <p class="muted">
-                A more polished landing area, account-based history, and stronger visual hierarchy make the project feel more deliberate.
+                Keep your uploads, saved results, and confidence history together so you can compare how the detector behaves over time.
             </p>
         </div>
         <div class="stat-stack">
             <div class="stat-pill">
-                <div class="muted">Your analyses</div>
+                <div class="muted">Your saved analyses</div>
                 <div class="metric-number">{{ user_total }}</div>
             </div>
             <div class="stat-pill">
-                <div class="muted">Current focus</div>
-                <div>Upload, review, and compare image authenticity decisions</div>
+                <div class="muted">Average confidence</div>
+                <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
             </div>
         </div>
     </aside>
 </section>
 
 <div class="showcase-band">
-    <span class="chip">Personal workspaces</span>
-    <span class="chip">Saved image history</span>
-    <span class="chip">Confidence-led results</span>
-    <span class="chip">Django + ML product demo</span>
+    <span class="chip">Refined design system</span>
+    <span class="chip">Private account history</span>
+    <span class="chip">Uncertain fallback</span>
+    <span class="chip">Multi-model scoring</span>
 </div>
 
 <section class="section">
     <div class="feature-grid">
         <div class="feature-card">
             <div class="feature-icon">01</div>
-            <h3>Account-first flow</h3>
-            <p class="muted">Every uploaded image is tied to a real user history, which makes the experience more believable and useful.</p>
+            <h3>Friendlier interface</h3>
+            <p class="muted">The design is softer, brighter, and more expressive while still keeping the analysis pages easy to scan.</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">02</div>
-            <h3>Saved verdicts</h3>
-            <p class="muted">Predictions, confidence, and image stats stay accessible so you can compare later model changes.</p>
+            <h3>Better judgment</h3>
+            <p class="muted">SecureLens now combines multiple detector signals instead of trusting a single weak label too quickly.</p>
         </div>
         <div class="feature-card">
             <div class="feature-icon">03</div>
-            <h3>Clearer storytelling</h3>
-            <p class="muted">The interface now presents SecureLens more like a serious demo platform than a raw utility page.</p>
+            <h3>More honest outputs</h3>
+            <p class="muted">Borderline cases can return <strong>UNCERTAIN</strong> so you are not shown a fake sense of confidence.</p>
         </div>
     </div>
 </section>
@@ -90,7 +90,7 @@
     <div class="panel">
         <div class="section-head">
             <h2>Recent platform analyses</h2>
-            <span class="muted">A live snapshot of recent predictions</span>
+            <span class="muted">A quick live snapshot</span>
         </div>
         {% if analyses %}
             <div class="table-wrap">
@@ -99,7 +99,7 @@
                         <th>Image</th>
                         <th>Verdict</th>
                         <th>Confidence</th>
-                        <th>Captured</th>
+                        <th>Saved</th>
                     </tr>
                     {% for item in analyses %}
                         <tr>
@@ -121,22 +121,43 @@
                 </table>
             </div>
         {% else %}
-            <p class="muted">No uploads yet. The first saved image will appear here.</p>
+            <p class="muted">No uploads yet. Your first scan will appear here.</p>
         {% endif %}
     </div>
 
     <div class="panel">
         <div class="section-head">
-            <h2>How SecureLens flows</h2>
+            <h2>How it works</h2>
         </div>
         <ul class="list">
-            <li>Create an account so each upload is tied to your own stored history.</li>
-            <li>Upload any local image and let SecureLens compute prediction and confidence.</li>
-            <li>Review the saved result later from your own dashboard and compare decisions over time.</li>
+            <li>Upload a local image through your own account workspace.</li>
+            <li>SecureLens blends detector votes and small image-texture clues.</li>
+            <li>Weak calls become uncertain instead of pretending to be obvious.</li>
         </ul>
         <div class="button-row">
-            <a href="{% url 'register' %}" class="btn btn-primary">Create account</a>
-            <a href="{% url 'login' %}" class="btn btn-secondary">Sign in</a>
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Analyze an image</a>
+            <a href="{% url 'stats' %}" class="btn btn-secondary">See stats</a>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="section-head">
+        <h2>Quick FAQ</h2>
+        <span class="muted">A few questions people usually have</span>
+    </div>
+    <div class="faq-grid">
+        <div class="faq-card">
+            <h3>Why is “uncertain” helpful?</h3>
+            <p class="muted">Because some images are genuinely ambiguous. Returning uncertainty is more honest than inventing confidence.</p>
+        </div>
+        <div class="faq-card">
+            <h3>Can I track old uploads?</h3>
+            <p class="muted">Yes. Your results, confidence, and image stats are saved to your account history.</p>
+        </div>
+        <div class="faq-card">
+            <h3>Is the detector perfect?</h3>
+            <p class="muted">Not yet. The new code is safer than before, but the strongest next step is still a proper labeled evaluation set.</p>
         </div>
     </div>
 </section>
