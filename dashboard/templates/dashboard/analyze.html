@@ -9,6 +9,11 @@
             The upload experience is cleaner and more like a real product flow. Underneath it, the detector is also stricter
             about forcing an answer when the vote is too close.
         </p>
+        <div class="hero-actions">
+            <a href="{% url 'batch' %}" class="btn btn-primary">Batch analysis</a>
+            <a href="{% url 'compare' %}" class="btn btn-secondary">Compare images</a>
+            <a href="{% url 'research' %}" class="btn btn-secondary">Research view</a>
+        </div>
         <div class="metric-grid">
             <div class="metric-card">
                 <div class="metric-number">{{ analysis_count }}</div>
@@ -81,8 +86,70 @@
             </div>
             <div class="glass-card">
                 <div class="page-kicker">Image stats</div>
-                <div class="muted">Mean pixel and deviation are stored so later experiments have a bit more context.</div>
+                <div class="muted">Mean pixel, deviation, metadata, quality, and heatmap signals are stored so later experiments have more context.</div>
             </div>
+            <div class="glass-card">
+                <div class="page-kicker">Live camera capture</div>
+                <div class="muted">You can take a quick webcam snapshot and send it directly into the same upload flow.</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Live camera demo</h2>
+        <span class="muted">Runs locally in your browser and uses the same analyzer after capture.</span>
+    </div>
+    <div class="split">
+        <div class="glass-card">
+            <video id="webcam-video" autoplay playsinline muted style="width:100%; border-radius:24px; background:#120913; aspect-ratio: 16 / 10; object-fit: cover;"></video>
+            <canvas id="webcam-canvas" class="sr-only"></canvas>
+            <div class="button-row">
+                <button type="button" class="btn btn-primary" id="start-camera">Start camera</button>
+                <button type="button" class="btn btn-secondary" id="capture-frame">Capture frame</button>
+                <button type="button" class="btn btn-secondary" id="stop-camera">Stop camera</button>
+            </div>
+            <p class="footer-note" style="text-align:left;">
+                This captures a frame from your webcam and uses it as the upload image. It does not identify you personally.
+            </p>
+        </div>
+
+        <div class="glass-card">
+            <div class="page-kicker">How to use it</div>
+            <div class="muted" style="line-height:1.75;">
+                Start the camera, position the face or scene you want to analyze, and capture a frame. SecureLens will convert that snapshot into the
+                normal upload flow so the result is saved in your history like any other analysis.
+            </div>
+            <div class="preview" id="webcam-preview" style="display:block; width:100%; margin-top:18px;">
+                <img id="webcam-preview-image" src="" alt="Webcam capture preview" style="display:none; width:100%;">
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Gesture to emoji</h2>
+        <span class="muted">A lightweight live demo using your webcam and hand landmarks.</span>
+    </div>
+    <div class="split">
+        <div class="glass-card">
+            <div class="page-kicker">Live gesture state</div>
+            <div class="gesture-stage">
+                <div id="gesture-burst" class="gesture-burst" aria-live="polite"></div>
+                <div id="gesture-emoji" class="gesture-emoji">✋</div>
+                <div id="gesture-label" class="muted" style="font-size:1.05rem; text-align:center;">Start the camera to detect a gesture.</div>
+            </div>
+        </div>
+        <div class="glass-card">
+            <div class="page-kicker">Detected gestures</div>
+            <ul class="list">
+                <li>Thumbs up → 👍</li>
+                <li>Peace sign → 😊</li>
+                <li>Open palm → ✋</li>
+                <li>Heart-like pose → ❤️</li>
+            </ul>
         </div>
     </div>
 </section>
@@ -92,6 +159,20 @@
     const fileInput = document.getElementById('{{ form.image.id_for_label }}');
     const preview = document.getElementById('preview');
     const previewImage = document.getElementById('preview-image');
+    const webcamVideo = document.getElementById('webcam-video');
+    const webcamCanvas = document.getElementById('webcam-canvas');
+    const startCameraBtn = document.getElementById('start-camera');
+    const captureFrameBtn = document.getElementById('capture-frame');
+    const stopCameraBtn = document.getElementById('stop-camera');
+    const webcamPreviewImage = document.getElementById('webcam-preview-image');
+    const gestureEmoji = document.getElementById('gesture-emoji');
+    const gestureLabel = document.getElementById('gesture-label');
+    const gestureBurst = document.getElementById('gesture-burst');
+    let webcamStream = null;
+    let gestureHands = null;
+    let gestureLoopActive = false;
+    let lastGestureKey = '';
+    let gestureBurstTimer = null;
 
     function updatePreview(file) {
         if (!file || !file.type.startsWith('image/')) return;
@@ -103,7 +184,157 @@
         reader.readAsDataURL(file);
     }
 
+    async function startCamera() {
+        try {
+            webcamStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' },
+                audio: false,
+            });
+            webcamVideo.srcObject = webcamStream;
+            if (gestureHands && !gestureLoopActive) {
+                gestureLoopActive = true;
+                runGestureLoop();
+            }
+        } catch (error) {
+            alert('Camera access failed. Please allow camera permission or use file upload instead.');
+        }
+    }
+
+    function stopCamera() {
+        if (webcamStream) {
+            webcamStream.getTracks().forEach((track) => track.stop());
+            webcamStream = null;
+            webcamVideo.srcObject = null;
+        }
+        gestureLoopActive = false;
+    }
+
+    async function runGestureLoop() {
+        while (gestureLoopActive && webcamStream) {
+            if (gestureHands) {
+                await gestureHands.send({ image: webcamVideo });
+            }
+            await new Promise((resolve) => setTimeout(resolve, 120));
+        }
+    }
+
+    function captureFrame() {
+        if (!webcamVideo.videoWidth || !webcamVideo.videoHeight) {
+            alert('Start the camera first, then capture a frame.');
+            return;
+        }
+        webcamCanvas.width = webcamVideo.videoWidth;
+        webcamCanvas.height = webcamVideo.videoHeight;
+        const ctx = webcamCanvas.getContext('2d');
+        ctx.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
+        webcamCanvas.toBlob((blob) => {
+            if (!blob) return;
+            const file = new File([blob], `securelens-webcam-${Date.now()}.png`, { type: 'image/png' });
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            updatePreview(file);
+            webcamPreviewImage.src = previewImage.src;
+            webcamPreviewImage.style.display = 'block';
+        }, 'image/png');
+    }
+
+    function classifyHandGesture(landmarks) {
+        if (!landmarks || landmarks.length !== 21) {
+            return { emoji: '✋', label: 'No clear hand gesture detected yet.' };
+        }
+
+        const tip = (index) => landmarks[index];
+        const pip = (index) => landmarks[index - 2];
+        const mcp = (index) => landmarks[index - 3];
+        const wrist = landmarks[0];
+
+        const fingerExtended = (fingerTip, fingerPip, axis = 'y') => {
+            if (axis === 'y') {
+                return fingerTip.y < fingerPip.y;
+            }
+            return fingerTip.x > fingerPip.x;
+        };
+
+        const thumbUp = tip(4).y < tip(3).y && tip(4).y < wrist.y;
+        const thumbInward = Math.abs(tip(4).x - tip(8).x) < 0.08 && Math.abs(tip(4).y - tip(8).y) < 0.08;
+        const indexExtended = fingerExtended(tip(8), pip(8));
+        const middleExtended = fingerExtended(tip(12), pip(12));
+        const ringExtended = fingerExtended(tip(16), pip(16));
+        const pinkyExtended = fingerExtended(tip(20), pip(20));
+        const openPalm = indexExtended && middleExtended && ringExtended && pinkyExtended;
+        const peaceSign = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
+        const thumbsUp = thumbUp && !indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
+        const heartLike = thumbInward && indexExtended && middleExtended && !ringExtended && !pinkyExtended;
+
+        if (heartLike) {
+            return { emoji: '❤️', label: 'Heart-like pose detected.' };
+        }
+        if (thumbsUp) {
+            return { emoji: '👍', label: 'Thumbs up detected.' };
+        }
+        if (peaceSign) {
+            return { emoji: '😊', label: 'Peace sign detected.' };
+        }
+        if (openPalm) {
+            return { emoji: '✋', label: 'Open palm detected.' };
+        }
+        return { emoji: '✋', label: 'Hand detected, but gesture is unclear.' };
+    }
+
+    function revealGesture(output) {
+        const gestureKey = `${output.emoji}:${output.label}`;
+        gestureEmoji.textContent = output.emoji;
+        gestureLabel.textContent = output.label;
+
+        if (gestureKey !== lastGestureKey) {
+            gestureEmoji.classList.remove('pop');
+            void gestureEmoji.offsetWidth;
+            gestureEmoji.classList.add('pop');
+
+            if (gestureBurst) {
+                gestureBurst.textContent = `${output.emoji} ${output.label}`;
+                gestureBurst.classList.remove('show');
+                void gestureBurst.offsetWidth;
+                gestureBurst.classList.add('show');
+                clearTimeout(gestureBurstTimer);
+                gestureBurstTimer = setTimeout(() => gestureBurst.classList.remove('show'), 1100);
+            }
+            lastGestureKey = gestureKey;
+        }
+    }
+
+    async function initGestureEngine() {
+        if (!window.Hands) {
+            gestureLabel.textContent = 'Gesture engine is loading...';
+            return;
+        }
+
+        gestureHands = new window.Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+        });
+        gestureHands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.5,
+        });
+        gestureHands.onResults((results) => {
+            const hand = results.multiHandLandmarks && results.multiHandLandmarks[0];
+            const output = classifyHandGesture(hand);
+            revealGesture(output);
+        });
+        gestureLabel.textContent = 'Start the camera to detect a gesture.';
+        if (webcamStream && !gestureLoopActive) {
+            gestureLoopActive = true;
+            runGestureLoop();
+        }
+    }
+
     fileInput.addEventListener('change', (event) => updatePreview(event.target.files[0]));
+    startCameraBtn.addEventListener('click', startCamera);
+    captureFrameBtn.addEventListener('click', captureFrame);
+    stopCameraBtn.addEventListener('click', stopCamera);
 
     dropZone.addEventListener('dragover', (event) => {
         event.preventDefault();
@@ -122,5 +353,10 @@
         fileInput.files = transfer.files;
         updatePreview(file);
     });
+
+    window.addEventListener('beforeunload', stopCamera);
+
+    window.addEventListener('load', initGestureEngine);
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 {% endblock %}

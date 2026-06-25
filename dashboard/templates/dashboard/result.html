@@ -20,13 +20,25 @@
             {{ obj.prediction|default:"Pending" }}
         </span>
         <div class="metric-number" style="color:{% if obj.prediction == 'REAL' %}var(--real){% elif obj.prediction == 'AI' %}var(--ai){% else %}#b7761f{% endif %};">
-            {{ obj.confidence|floatformat:2 }}%
+            {{ score_text }}
         </div>
         <div class="muted">Confidence score</div>
         <div class="confidence-bar">
             <div class="confidence-fill {% if obj.prediction == 'REAL' %}fill-real{% elif obj.prediction == 'AI' %}fill-ai{% else %}fill-none{% endif %}" style="width:{{ obj.confidence|default:0|floatformat:0 }}%;"></div>
         </div>
         <div class="footer-note" style="text-align:left;">{{ result_explanation }}</div>
+        <div class="button-row" style="margin-top:8px;">
+            <a href="{% url 'export-report' obj.pk %}" class="btn btn-primary">Export report PDF</a>
+            <a href="{% url 'stats' %}" class="btn btn-secondary">Open research stats</a>
+        </div>
+        <div class="footer-note" style="text-align:left;">
+            Ground truth:
+            {% if obj.ground_truth %}
+                <strong>{{ obj.ground_truth }}</strong>
+            {% else %}
+                not labeled yet
+            {% endif %}
+        </div>
     </div>
 </section>
 
@@ -67,6 +79,58 @@
                     <td>{{ obj.std_pixel|floatformat:2 }}</td>
                 </tr>
                 <tr>
+                    <td>Entropy</td>
+                    <td>{{ analysis_meta.stats.entropy|default:0|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Edge density</td>
+                    <td>{{ analysis_meta.stats.edge_density|default:0|floatformat:3 }}</td>
+                </tr>
+                <tr>
+                    <td>ELA mean</td>
+                    <td>{{ analysis_meta.stats.ela_mean|default:0|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Compression score</td>
+                    <td>{{ analysis_meta.stats.compression_artifact_score|default:0|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Compression level</td>
+                    <td>{{ analysis_meta.stats.compression_label|default:"Unknown" }}</td>
+                </tr>
+                <tr>
+                    <td>Image format</td>
+                    <td>{{ analysis_meta.metadata.format|default:"Unknown" }}</td>
+                </tr>
+                <tr>
+                    <td>Resolution</td>
+                    <td>{{ analysis_meta.metadata.resolution|default:"Unknown" }}</td>
+                </tr>
+                <tr>
+                    <td>File size</td>
+                    <td>{{ analysis_meta.metadata.file_size_kb|default:0|floatformat:2 }} KB</td>
+                </tr>
+                <tr>
+                    <td>Sharpness</td>
+                    <td>{{ analysis_meta.quality.sharpness|default:0|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Blur level</td>
+                    <td>{{ analysis_meta.quality.blur_level|default:"Unknown" }}</td>
+                </tr>
+                <tr>
+                    <td>Quality label</td>
+                    <td>{{ analysis_meta.quality.quality_label|default:"Unknown" }}</td>
+                </tr>
+                <tr>
+                    <td>Brightness</td>
+                    <td>{{ analysis_meta.quality.brightness|default:0|floatformat:2 }}</td>
+                </tr>
+                <tr>
+                    <td>Contrast</td>
+                    <td>{{ analysis_meta.quality.contrast|default:0|floatformat:2 }}</td>
+                </tr>
+                <tr>
                     <td>Saved at</td>
                     <td>{{ obj.uploaded_at|date:"M d, Y H:i" }}</td>
                 </tr>
@@ -75,6 +139,117 @@
         <div class="button-row">
             <a href="{% url 'delete' obj.pk %}" class="btn btn-danger">Delete this analysis</a>
         </div>
+        <div class="button-row">
+            <form method="post" action="{% url 'label-analysis' obj.pk %}" style="margin:0;">
+                {% csrf_token %}
+                <input type="hidden" name="ground_truth" value="REAL">
+                <button type="submit" class="btn btn-secondary">Mark real</button>
+            </form>
+            <form method="post" action="{% url 'label-analysis' obj.pk %}" style="margin:0;">
+                {% csrf_token %}
+                <input type="hidden" name="ground_truth" value="AI">
+                <button type="submit" class="btn btn-secondary">Mark AI</button>
+            </form>
+            <form method="post" action="{% url 'label-analysis' obj.pk %}" style="margin:0;">
+                {% csrf_token %}
+                <input type="hidden" name="ground_truth" value="UNCERTAIN">
+                <button type="submit" class="btn btn-secondary">Mark uncertain</button>
+            </form>
+        </div>
     </div>
 </section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Research evidence</h2>
+        <span class="muted">FFT, heatmap, metadata, and image quality signal cards.</span>
+    </div>
+    <div class="split">
+        <div class="glass-card">
+            <div class="page-kicker">FFT spectrum</div>
+            {% if analysis_meta.fft_preview %}
+                <canvas id="fft-canvas" style="width:100%; aspect-ratio:1/1; border-radius:20px; background:#120913;"></canvas>
+            {% else %}
+                <p class="muted">No FFT preview was stored for this analysis.</p>
+            {% endif %}
+        </div>
+        <div class="glass-card">
+            <div class="page-kicker">Heatmap visualization</div>
+            {% if analysis_meta.heatmap_preview %}
+                <canvas id="heatmap-canvas" style="width:100%; aspect-ratio:1/1; border-radius:20px; background:#120913;"></canvas>
+            {% else %}
+                <p class="muted">No heatmap preview was stored for this analysis.</p>
+            {% endif %}
+        </div>
+    </div>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Model evidence</h2>
+        <span class="muted">Useful for debugging and for explaining the verdict in a portfolio demo.</span>
+    </div>
+    {% if analysis_meta.models %}
+        <div class="feature-grid">
+            {% for model in analysis_meta.models %}
+                <div class="feature-card">
+                    <div class="feature-icon">{{ forloop.counter }}</div>
+                    <h3 style="margin-top:0;">{{ model.model_name }}</h3>
+                    <p class="muted" style="margin-bottom:8px;">Top label: {{ model.top_label }}</p>
+                    <p class="muted" style="margin-bottom:8px;">AI score: {{ model.ai_score|floatformat:2 }}</p>
+                    <p class="muted" style="margin-bottom:8px;">REAL score: {{ model.real_score|floatformat:2 }}</p>
+                    <p class="muted" style="margin-bottom:8px;">Unknown score: {{ model.unknown_score|default:0|floatformat:2 }}</p>
+                    <p class="muted" style="margin-bottom:0;">Weight: {{ model.weight|floatformat:2 }}</p>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="muted">No model evidence was stored for this analysis.</p>
+    {% endif %}
+</section>
+
+<script>
+    function paintMatrix(canvas, matrix, palette) {
+        if (!canvas || !Array.isArray(matrix) || !matrix.length) return;
+        const ctx = canvas.getContext('2d');
+        const size = matrix.length;
+        canvas.width = size;
+        canvas.height = size;
+        const imageData = ctx.createImageData(size, size);
+
+        for (let y = 0; y < size; y += 1) {
+            for (let x = 0; x < size; x += 1) {
+                const value = Math.max(0, Math.min(255, matrix[y][x] || 0));
+                const idx = (y * size + x) * 4;
+                const color = palette(value);
+                imageData.data[idx] = color[0];
+                imageData.data[idx + 1] = color[1];
+                imageData.data[idx + 2] = color[2];
+                imageData.data[idx + 3] = 255;
+            }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        canvas.style.imageRendering = 'pixelated';
+    }
+
+    const fftCanvas = document.getElementById('fft-canvas');
+    if (fftCanvas) {
+        const fftData = {{ fft_preview_json|default:"[]"|safe }};
+        paintMatrix(fftCanvas, fftData, (value) => [value, 120 + value * 0.2, 255 - value]);
+    }
+
+    const heatmapCanvas = document.getElementById('heatmap-canvas');
+    if (heatmapCanvas) {
+        const heatmapData = {{ heatmap_preview_json|default:"[]"|safe }};
+        paintMatrix(heatmapCanvas, heatmapData, (value) => {
+            const soft = value / 255;
+            return [
+                Math.round(255 * Math.min(1, soft * 1.15)),
+                Math.round(40 + 180 * Math.min(1, soft * 0.95)),
+                Math.round(95 + 120 * (1 - soft)),
+            ];
+        });
+    }
+</script>
 {% endblock %}

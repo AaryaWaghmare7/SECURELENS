@@ -1,0 +1,60 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Features{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <div class="eyebrow">Product features</div>
+        <h1>The parts that make SecureLens feel interactive, not static.</h1>
+        <p class="lead">
+            These are the features that give the project a stronger portfolio feel: live capture, gesture reactions, saved history,
+            research signals, and a calmer verdict flow when the detector is unsure.
+        </p>
+        <div class="hero-actions">
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Open the analyzer</a>
+            <a href="{% url 'stats' %}" class="btn btn-secondary">View stats</a>
+        </div>
+    </div>
+    <aside class="hero-card">
+        <div class="eyebrow">Interactive highlights</div>
+        <div class="stat-stack">
+            <div class="stat-pill">
+                <div class="page-kicker">Gesture emoji popups</div>
+                <div class="muted">Thumbs up, peace, and heart-like poses now burst visually on screen.</div>
+            </div>
+            <div class="stat-pill">
+                <div class="page-kicker">Live webcam capture</div>
+                <div class="muted">Capture a frame and send it into the same analysis pipeline.</div>
+            </div>
+            <div class="stat-pill">
+                <div class="page-kicker">Research signals</div>
+                <div class="muted">Entropy, FFT, edge density, and ELA details help explain the verdict.</div>
+            </div>
+        </div>
+    </aside>
+</section>
+
+<section class="section">
+    <div class="feature-grid">
+        <div class="feature-card">
+            <div class="feature-icon">01</div>
+            <h3>Gesture reactions</h3>
+            <p class="muted">The emoji display now animates when a new gesture is detected, so the demo feels responsive.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">02</div>
+            <h3>More polished UI</h3>
+            <p class="muted">The pages use a richer palette, smoother cards, and more layered motion.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">03</div>
+            <h3>Saved results</h3>
+            <p class="muted">Every analysis stays attached to the logged-in account so you can compare runs later.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">04</div>
+            <h3>Clearer explanation</h3>
+            <p class="muted">Borderline cases can stay uncertain instead of pretending the answer is obvious.</p>
+        </div>
+    </div>
+</section>
+{% endblock %}

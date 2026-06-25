@@ -1,0 +1,144 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Compare{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <div class="eyebrow">Comparison mode</div>
+        <h1>Upload two images and compare how similar they really are.</h1>
+        <p class="lead">
+            Comparison mode is meant for duplicate checks, edit checks, and forensic demos. It blends histogram similarity,
+            edge structure, and pixel distance into a single score.
+        </p>
+        <div class="hero-actions">
+            <a href="{% url 'batch' %}" class="btn btn-primary">Batch mode</a>
+            <a href="{% url 'research' %}" class="btn btn-secondary">Research view</a>
+        </div>
+    </div>
+    <aside class="hero-card">
+        <div class="eyebrow">What it checks</div>
+        <ul class="list">
+            <li>Histogram similarity</li>
+            <li>Edge density similarity</li>
+            <li>Pixel-level difference</li>
+        </ul>
+    </aside>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Upload two images</h2>
+        <span class="muted">No files are saved unless you want them saved elsewhere.</span>
+    </div>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="split">
+            <div class="glass-card">
+                <div class="page-kicker">Image A</div>
+                <input type="file" name="image_a" accept="image/*" class="form-input">
+            </div>
+            <div class="glass-card">
+                <div class="page-kicker">Image B</div>
+                <input type="file" name="image_b" accept="image/*" class="form-input">
+            </div>
+        </div>
+        <div class="button-row">
+            <button type="submit" class="btn btn-primary">Compare images</button>
+        </div>
+    </form>
+</section>
+
+{% if comparison %}
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Preview</h2>
+        </div>
+        <div class="split">
+            <div class="glass-card">
+                <div class="page-kicker">Image A</div>
+                <img src="{{ image_a_data_url }}" alt="First comparison image" style="width:100%; border-radius:18px; display:block;">
+            </div>
+            <div class="glass-card">
+                <div class="page-kicker">Image B</div>
+                <img src="{{ image_b_data_url }}" alt="Second comparison image" style="width:100%; border-radius:18px; display:block;">
+            </div>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="section-head">
+            <h2>Similarity score</h2>
+        </div>
+        <div class="metric-number">{{ comparison.similarity }}%</div>
+        <div class="muted">Overall similarity</div>
+        <div class="confidence-bar" style="margin-bottom:16px;">
+            <div class="confidence-fill fill-real" style="width:{{ comparison.similarity|floatformat:0 }}%;"></div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <tr><th>Metric</th><th>Value</th></tr>
+                <tr><td>Histogram similarity</td><td>{{ comparison.histogram_similarity }}%</td></tr>
+                <tr><td>Edge similarity</td><td>{{ comparison.edge_similarity }}%</td></tr>
+                <tr><td>Pixel similarity</td><td>{{ comparison.pixel_similarity }}%</td></tr>
+                <tr><td>Edge density A</td><td>{{ comparison.edge_density_a }}</td></tr>
+                <tr><td>Edge density B</td><td>{{ comparison.edge_density_b }}</td></tr>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Histogram comparison</h2>
+        <span class="muted">A simple forensic chart for visual differences.</span>
+    </div>
+    <canvas id="compareChart" style="max-height:340px;"></canvas>
+</section>
+
+<script>
+    const compareCtx = document.getElementById('compareChart').getContext('2d');
+    new Chart(compareCtx, {
+        type: 'line',
+        data: {
+            labels: Array.from({ length: {{ comparison.hist_a|length }} }, (_, index) => index + 1),
+            datasets: [
+                {
+                    label: 'Image A',
+                    data: {{ hist_a_json|safe }},
+                    borderColor: '#7a4dff',
+                    backgroundColor: 'rgba(122, 77, 255, 0.14)',
+                    tension: 0.25,
+                    fill: true,
+                },
+                {
+                    label: 'Image B',
+                    data: {{ hist_b_json|safe }},
+                    borderColor: '#ff6a7b',
+                    backgroundColor: 'rgba(255, 106, 123, 0.14)',
+                    tension: 0.25,
+                    fill: true,
+                },
+            ],
+        },
+        options: {
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#2f2537'
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#6d6578' },
+                    grid: { color: 'rgba(84,70,112,0.08)' }
+                },
+                y: {
+                    ticks: { color: '#6d6578' },
+                    grid: { color: 'rgba(84,70,112,0.08)' }
+                }
+            }
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

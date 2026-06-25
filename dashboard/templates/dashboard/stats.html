@@ -16,6 +16,8 @@
         <div class="muted">Total personal uploads</div>
         <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
         <div class="muted">Average confidence</div>
+        <div class="metric-number">{{ metadata_count }}</div>
+        <div class="muted">Images with metadata tracked</div>
     </div>
 </section>
 
@@ -48,7 +50,105 @@
                 <div class="metric-number">{{ avg_confidence|floatformat:1 }}%</div>
                 <div>Average confidence</div>
             </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ avg_entropy|floatformat:2 }}</div>
+                <div>Average entropy</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ avg_edge_density|floatformat:3 }}</div>
+                <div>Average edge density</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ dataset_window_size }}</div>
+                <div>Latest samples charted</div>
+            </div>
         </div>
+    </div>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Research signals</h2>
+        <span class="muted">Quick forensic indicators from your saved uploads</span>
+    </div>
+    <div class="feature-grid">
+        <div class="feature-card">
+            <div class="feature-icon">E</div>
+            <h3>Entropy</h3>
+            <p class="muted">Measures information content. Higher entropy often means more visual complexity.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">F</div>
+            <h3>FFT spectrum</h3>
+            <p class="muted">Shows frequency structure so you can inspect image regularity and artifacts.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">D</div>
+            <h3>Edge density</h3>
+            <p class="muted">Tracks how much structural detail the image contains after Canny edge detection.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">Q</div>
+            <h3>Quality score</h3>
+            <p class="muted">Sharpness, blur, brightness, and contrast summarize how clean the input looks.</p>
+        </div>
+    </div>
+</section>
+
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Dataset trends</h2>
+            <span class="muted">Latest 50 uploads</span>
+        </div>
+        <canvas id="trendChart" style="max-height:340px;"></canvas>
+    </div>
+    <div class="panel">
+        <div class="section-head">
+            <h2>Model performance</h2>
+            <span class="muted">Uses your manually labeled examples</span>
+        </div>
+        {% if performance.labeled_total %}
+            <div class="metric-grid">
+                <div class="metric-card">
+                    <div class="metric-number">{{ performance.accuracy|floatformat:2 }}</div>
+                    <div>Accuracy</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number">{{ performance.precision|floatformat:2 }}</div>
+                    <div>Precision</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number">{{ performance.recall|floatformat:2 }}</div>
+                    <div>Recall</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-number">{{ performance.labeled_total }}</div>
+                    <div>Labeled samples</div>
+                </div>
+            </div>
+            <div class="table-wrap" style="margin-top:16px;">
+                <table>
+                    <tr>
+                        <th></th>
+                        <th>Pred AI</th>
+                        <th>Pred Real</th>
+                    </tr>
+                    <tr>
+                        <th>Actual AI</th>
+                        <td>{{ performance.confusion.ai_ai }}</td>
+                        <td>{{ performance.confusion.real_ai }}</td>
+                    </tr>
+                    <tr>
+                        <th>Actual Real</th>
+                        <td>{{ performance.confusion.ai_real }}</td>
+                        <td>{{ performance.confusion.real_real }}</td>
+                    </tr>
+                </table>
+            </div>
+        {% else %}
+            <p class="muted">Label a few results on the result page first, then SecureLens will compute accuracy, precision, recall, and a confusion matrix here.</p>
+        {% endif %}
     </div>
 </section>
 
@@ -104,6 +204,61 @@
                         color: '#40233b',
                         font: { size: 13 }
                     }
+                }
+            }
+        }
+    });
+
+    const trendCtx = document.getElementById('trendChart').getContext('2d');
+    new Chart(trendCtx, {
+        type: 'line',
+        data: {
+            labels: {{ labels_json|safe }},
+            datasets: [
+                {
+                    label: 'Entropy',
+                    data: {{ entropy_json|safe }},
+                    borderColor: '#7a4dff',
+                    backgroundColor: 'rgba(122, 77, 255, 0.16)',
+                    tension: 0.35,
+                    fill: true,
+                },
+                {
+                    label: 'Edge density',
+                    data: {{ edge_json|safe }},
+                    borderColor: '#ff6a7b',
+                    backgroundColor: 'rgba(255, 106, 123, 0.12)',
+                    tension: 0.35,
+                    fill: true,
+                },
+                {
+                    label: 'Confidence',
+                    data: {{ confidence_json|safe }},
+                    borderColor: '#ffb34f',
+                    backgroundColor: 'rgba(255, 179, 79, 0.12)',
+                    tension: 0.35,
+                    fill: true,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: '#2f2537',
+                        font: { size: 13 }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: { color: '#6d6578' },
+                    grid: { color: 'rgba(84,70,112,0.08)' }
+                },
+                y: {
+                    ticks: { color: '#6d6578' },
+                    grid: { color: 'rgba(84,70,112,0.08)' }
                 }
             }
         }

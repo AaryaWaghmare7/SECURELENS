@@ -1,0 +1,65 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Research{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <div class="eyebrow">Research mode</div>
+        <h1>A more thesis-friendly view of how SecureLens reasons about images.</h1>
+        <p class="lead">
+            This page is useful for demos, portfolios, and write-ups. It explains the detector signals, the current limitations,
+            and the next improvements that would make the project feel even more serious.
+        </p>
+        <div class="hero-actions">
+            <a href="{% url 'stats' %}" class="btn btn-primary">Open stats</a>
+            <a href="{% url 'about' %}" class="btn btn-secondary">Backend storage</a>
+        </div>
+    </div>
+    <aside class="hero-card">
+        <div class="eyebrow">Current emphasis</div>
+        <div class="stat-stack">
+            <div class="stat-pill">
+                <div class="page-kicker">Frequency analysis</div>
+                <div class="muted">Shows repeating structure and high-frequency artifacts in the image.</div>
+            </div>
+            <div class="stat-pill">
+                <div class="page-kicker">Entropy and edges</div>
+                <div class="muted">Used as supporting signals when model votes are too close to call.</div>
+            </div>
+            <div class="stat-pill">
+                <div class="page-kicker">Metadata and quality</div>
+                <div class="muted">Resolution, file size, sharpness, blur, brightness, and contrast are tracked too.</div>
+            </div>
+            <div class="stat-pill">
+                <div class="page-kicker">Careful verdicts</div>
+                <div class="muted">Borderline images can be marked uncertain instead of mislabeled.</div>
+            </div>
+        </div>
+    </aside>
+</section>
+
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>How the pipeline behaves</h2>
+        </div>
+        <ul class="list">
+            <li>Image is uploaded and saved against the active user.</li>
+            <li>Several detector views and heuristic signals are combined.</li>
+            <li>The final result can be AI, REAL, or UNCERTAIN.</li>
+            <li>Metadata, quality, and heatmap evidence are bundled into the saved analysis.</li>
+        </ul>
+    </div>
+
+    <div class="panel">
+        <div class="section-head">
+            <h2>What to improve next</h2>
+        </div>
+        <ul class="list">
+            <li>Build a labeled validation set for more honest accuracy measurement.</li>
+            <li>Add calibration charts so confidence scores mean something measurable.</li>
+            <li>Compare results across more detectors and more image types.</li>
+            <li>Track batch and compare mode outputs alongside single-image analyses.</li>
+        </ul>
+    </div>
+</section>
+{% endblock %}

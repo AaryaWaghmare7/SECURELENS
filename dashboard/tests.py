@@ -57,6 +57,16 @@ class SecureLensPredictionTests(TestCase):
         self.assertEqual(summary['ai_score'], 0.81)
         self.assertEqual(summary['real_score'], 0.17)
 
+    def test_generic_labels_do_not_force_real(self):
+        results = [
+            {'label': 'LABEL_0', 'score': 0.92},
+            {'label': 'LABEL_1', 'score': 0.08},
+        ]
+        summary = summarize_model_results(results)
+        self.assertEqual(summary['ai_score'], 0.0)
+        self.assertEqual(summary['real_score'], 0.0)
+        self.assertEqual(summary['unknown_score'], 0.92)
+
     def test_close_votes_become_uncertain(self):
         prediction, confidence, explanation = classify_prediction(
             [

@@ -1,0 +1,134 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | Batch{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <div class="eyebrow">Batch analysis</div>
+        <h1>Upload a folder-like group of images and review them in one pass.</h1>
+        <p class="lead">
+            This is useful when you want SecureLens to feel more like a real workstation. Each uploaded image is analyzed, saved,
+            and returned with its own verdict.
+        </p>
+        <div class="hero-actions">
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Single image mode</a>
+            <a href="{% url 'compare' %}" class="btn btn-secondary">Compare mode</a>
+        </div>
+    </div>
+    <aside class="hero-card">
+        <div class="eyebrow">Batch notes</div>
+        <ul class="list">
+            <li>Multiple images are accepted in one upload.</li>
+            <li>Each file is stored in your account history.</li>
+            <li>A shared batch ID groups the run together behind the scenes.</li>
+        </ul>
+    </aside>
+</section>
+
+<section class="section panel">
+    <div class="section-head">
+        <h2>Upload images</h2>
+        <span class="muted">Use JPG, PNG, or WEBP files.</span>
+    </div>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="drop-zone">
+            <div class="eyebrow">Choose several files</div>
+            <h3 style="margin:0 0 10px;">Drop in a batch of images</h3>
+            <p class="muted">SecureLens will analyze each one and save the results to your history.</p>
+            <input type="file" name="images" id="batch-images" accept="image/*" multiple class="form-input" style="max-width: 520px; margin: 18px auto 0; display:block;">
+        </div>
+        <div class="button-row">
+            <button type="submit" class="btn btn-primary">Run batch analysis</button>
+        </div>
+    </form>
+</section>
+
+{% if results %}
+<section class="section panel">
+    <div class="section-head">
+        <h2>Batch results</h2>
+        <span class="muted">Batch ID: {{ batch_id }}</span>
+    </div>
+    <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));">
+        {% for item in results %}
+            <div class="feature-card" style="overflow:hidden;">
+                <img src="{{ item.obj.image.url }}" alt="Batch result image" style="width:100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 20px;">
+                <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; margin-top:14px; flex-wrap:wrap;">
+                    <span class="badge {% if item.obj.prediction == 'REAL' %}badge-real{% elif item.obj.prediction == 'AI' %}badge-ai{% else %}badge-none{% endif %}">
+                        {{ item.obj.prediction }}
+                    </span>
+                    <strong>{{ item.obj.confidence|floatformat:2 }}%</strong>
+                </div>
+                <div class="glass-card" style="margin-top:14px; padding:14px;">
+                    <div class="page-kicker" style="margin-bottom:10px;">Heatmap preview</div>
+                    <canvas class="batch-heatmap" data-matrix='{{ item.obj.analysis_meta.heatmap_preview|default:"[]"|escapejs }}' style="width:100%; aspect-ratio:1/1; border-radius:16px; background:#120913;"></canvas>
+                </div>
+                <p class="muted" style="margin:10px 0 0;">
+                    <strong>Resolution:</strong> {{ item.obj.analysis_meta.metadata.resolution|default:"Unknown" }}<br>
+                    <strong>File size:</strong> {{ item.obj.analysis_meta.metadata.file_size_kb|default:0|floatformat:2 }} KB<br>
+                    <strong>Channels:</strong> {{ item.obj.analysis_meta.metadata.channels|default:0 }}<br>
+                    <strong>Format:</strong> {{ item.obj.analysis_meta.metadata.format|default:"Unknown" }}<br>
+                    <strong>Quality:</strong> {{ item.obj.analysis_meta.quality.quality_label|default:"Unknown" }}<br>
+                    <strong>Blur:</strong> {{ item.obj.analysis_meta.quality.blur_level|default:"Unknown" }}<br>
+                    <strong>Brightness:</strong> {{ item.obj.analysis_meta.quality.brightness|default:0|floatformat:2 }}<br>
+                    <strong>Models:</strong> {{ item.obj.analysis_meta.model_count|default:0 }}
+                </p>
+                <div class="table-wrap" style="margin-top:14px;">
+                    <table>
+                        <tr><th>Signal</th><th>Value</th></tr>
+                        <tr><td>Mean pixel</td><td>{{ item.obj.mean_pixel|floatformat:2 }}</td></tr>
+                        <tr><td>Std dev</td><td>{{ item.obj.std_pixel|floatformat:2 }}</td></tr>
+                        <tr><td>Entropy</td><td>{{ item.obj.analysis_meta.stats.entropy|default:0|floatformat:2 }}</td></tr>
+                        <tr><td>Edge density</td><td>{{ item.obj.analysis_meta.stats.edge_density|default:0|floatformat:3 }}</td></tr>
+                        <tr><td>ELA mean</td><td>{{ item.obj.analysis_meta.stats.ela_mean|default:0|floatformat:2 }}</td></tr>
+                        <tr><td>ELA std</td><td>{{ item.obj.analysis_meta.stats.ela_std|default:0|floatformat:2 }}</td></tr>
+                        <tr><td>Compression score</td><td>{{ item.obj.analysis_meta.stats.compression_artifact_score|default:0|floatformat:2 }}</td></tr>
+                        <tr><td>Compression level</td><td>{{ item.obj.analysis_meta.stats.compression_label|default:"Unknown" }}</td></tr>
+                        <tr><td>Sharpness</td><td>{{ item.obj.analysis_meta.quality.sharpness|default:0|floatformat:2 }}</td></tr>
+                        <tr><td>Blur level</td><td>{{ item.obj.analysis_meta.quality.blur_level|default:"Unknown" }}</td></tr>
+                        <tr><td>Contrast</td><td>{{ item.obj.analysis_meta.quality.contrast|default:0|floatformat:2 }}</td></tr>
+                        <tr><td>Explanation</td><td>{{ item.obj.analysis_meta.explanation|default:"Saved to history" }}</td></tr>
+                    </table>
+                </div>
+                <div class="button-row" style="margin-top:14px;">
+                    <a class="btn btn-secondary" href="{% url 'result' item.obj.pk %}">Open result</a>
+                    <a class="btn btn-primary" href="{% url 'export-report' item.obj.pk %}">Export PDF</a>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<script>
+    function paintMiniMatrix(canvas, matrix) {
+        if (!canvas || !matrix || !matrix.length) return;
+        const ctx = canvas.getContext('2d');
+        const size = matrix.length;
+        canvas.width = size;
+        canvas.height = size;
+        const imageData = ctx.createImageData(size, size);
+        for (let y = 0; y < size; y += 1) {
+            for (let x = 0; x < size; x += 1) {
+                const value = Math.max(0, Math.min(255, matrix[y][x] || 0));
+                const idx = (y * size + x) * 4;
+                imageData.data[idx] = Math.round(value * 1.15);
+                imageData.data[idx + 1] = Math.round(70 + value * 0.55);
+                imageData.data[idx + 2] = Math.round(255 - value * 0.7);
+                imageData.data[idx + 3] = 255;
+            }
+        }
+        ctx.putImageData(imageData, 0, 0);
+        canvas.style.imageRendering = 'pixelated';
+    }
+
+    document.querySelectorAll('.batch-heatmap').forEach((canvas) => {
+        try {
+            const matrix = JSON.parse(canvas.dataset.matrix || '[]');
+            paintMiniMatrix(canvas, matrix);
+        } catch (error) {
+            console.warn('Batch heatmap render failed', error);
+        }
+    });
+</script>
+{% endblock %}

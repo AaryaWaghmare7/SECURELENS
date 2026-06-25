@@ -6,6 +6,7 @@ numpy
 opencv-python
 pillow
 psycopg[binary]
+reportlab
 tensorflow
 torch
 transformers

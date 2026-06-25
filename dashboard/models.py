@@ -5,9 +5,11 @@ class ImageAnalysis(models.Model):
     owner       = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='analyses', null=True, blank=True)
     image       = models.ImageField(upload_to='uploads/')
     prediction  = models.CharField(max_length=20, null=True)
+    ground_truth = models.CharField(max_length=20, null=True, blank=True)
     confidence  = models.FloatField(null=True)
     mean_pixel  = models.FloatField(null=True)
     std_pixel   = models.FloatField(null=True)
+    analysis_meta = models.JSONField(default=dict, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     batch_id    = models.CharField(max_length=50, null=True, blank=True)
 

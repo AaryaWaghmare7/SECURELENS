@@ -1,0 +1,77 @@
+{% extends 'dashboard/base.html' %}
+{% block title %}SecureLens | About{% endblock %}
+{% block content %}
+<section class="hero">
+    <div>
+        <div class="eyebrow">About SecureLens</div>
+        <h1>A cleaner image trust project with a more polished story.</h1>
+        <p class="lead">
+            SecureLens is built to look like a real product instead of a class demo. It blends a friendlier interface with a cautious
+            detector so borderline results do not get forced into the wrong bucket.
+        </p>
+        <div class="hero-actions">
+            <a href="{% url 'analyze' %}" class="btn btn-primary">Try an analysis</a>
+            <a href="{% url 'research' %}" class="btn btn-secondary">See the research view</a>
+        </div>
+    </div>
+    <aside class="hero-card">
+        <div class="eyebrow">Backend storage</div>
+        <div class="stat-stack">
+            <div class="stat-pill">
+                <div class="page-kicker">Users</div>
+                <div class="muted">Stored in Django's auth tables inside the project database.</div>
+            </div>
+            <div class="stat-pill">
+                <div class="page-kicker">Analyses</div>
+                <div class="muted">Saved in the <code>dashboard_imageanalysis</code> table with prediction, confidence, and metadata.</div>
+            </div>
+            <div class="stat-pill">
+                <div class="page-kicker">Uploads</div>
+                <div class="muted">Stored in <code>media/uploads/</code> during local development unless you change <code>MEDIA_ROOT</code>.</div>
+            </div>
+        </div>
+    </aside>
+</section>
+
+<section class="section split">
+    <div class="panel">
+        <div class="section-head">
+            <h2>Where your data lives</h2>
+            <span class="muted">Local development setup</span>
+        </div>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">DB</div>
+                <h3>SQLite database</h3>
+                <p class="muted">The default local database file is <code>db.sqlite3</code> at the project root.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">AU</div>
+                <h3>User accounts</h3>
+                <p class="muted">Login details and profile info sit in Django's built-in auth app tables.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">UP</div>
+                <h3>Uploaded images</h3>
+                <p class="muted">Image files are written to the media folder so the history page can show them again later.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">MD</div>
+                <h3>Saved metadata</h3>
+                <p class="muted">Extra analysis details are kept in <code>analysis_meta</code> for FFT, entropy, and model evidence.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="section-head">
+            <h2>Why it feels more polished</h2>
+        </div>
+        <ul class="list">
+            <li>Soft layered gradients and floating particle motion.</li>
+            <li>Camera capture and gesture-to-emoji feedback for a more interactive demo.</li>
+            <li>Saved history and stats so the project feels like a full product rather than one screen.</li>
+        </ul>
+    </div>
+</section>
+{% endblock %}

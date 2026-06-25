@@ -1,26 +1,33 @@
 import os
+import io
+import json
+import base64
+import tempfile
+from uuid import uuid4
 from functools import lru_cache
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageOps
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView, LogoutView
 from django.db.models import Avg
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from .forms import ImageUploadForm, LoginForm, RegisterForm
 from .models import ImageAnalysis
 
 DEFAULT_MODELS = [
+    ("haywoodsloan/autotrain-ai-vs-real-image-classifier", 1.2),
     ("umm-maybe/AI-image-detector", 1.0),
-    ("Organika/sdxl-detector", 0.9),
-    ("haywoodsloan/autotrain-ai-vs-real-image-classifier", 0.8),
+    ("Organika/sdxl-detector", 0.6),
 ]
 AI_KEYWORDS = ('ai', 'fake', 'artificial', 'generated', 'synthetic', 'sdxl', 'midjourney')
 REAL_KEYWORDS = ('real', 'human', 'authentic', 'natural', 'photo', 'photograph')
+UNKNOWN_KEYWORDS = ('label_', 'unknown', 'other', 'fake_or_real', 'generated_or_real')
 
 
 def build_model_specs():
@@ -49,6 +56,7 @@ def summarize_model_results(results):
         return {
             'ai_score': 0.0,
             'real_score': 0.0,
+            'unknown_score': 0.0,
             'top_score': 0.0,
             'top_label': 'unknown',
         }
@@ -62,20 +70,36 @@ def summarize_model_results(results):
         default=0.0,
     )
     top = max(results, key=lambda item: item['score'])
+    top_label = top['label'].lower()
+    unknown_score = 0.0
 
     if ai_score == 0.0 and real_score == 0.0:
-        label = top['label'].lower()
-        if any(word in label for word in AI_KEYWORDS):
+        if any(word in top_label for word in AI_KEYWORDS):
             ai_score = top['score']
-        else:
+        elif any(word in top_label for word in REAL_KEYWORDS):
             real_score = top['score']
+        else:
+            unknown_score = top['score']
+    elif any(word in top_label for word in UNKNOWN_KEYWORDS):
+        unknown_score = top['score']
 
     return {
         'ai_score': ai_score,
         'real_score': real_score,
+        'unknown_score': unknown_score,
         'top_score': top['score'],
         'top_label': top['label'],
     }
+
+
+def build_analysis_views(image_path):
+    base = Image.open(image_path).convert("RGB")
+    views = [
+        ("original", base),
+        ("autocontrast", ImageOps.autocontrast(base)),
+        ("sharpened", base.filter(ImageFilter.SHARPEN)),
+    ]
+    return views
 
 
 def compute_edge_density(img):
@@ -86,14 +110,197 @@ def compute_edge_density(img):
     return float(np.count_nonzero(edges) / edges.size)
 
 
+def compute_ela_score(image_path, quality=90):
+    try:
+        original = Image.open(image_path).convert("RGB")
+        buffer = io.BytesIO()
+        original.save(buffer, format="JPEG", quality=quality)
+        buffer.seek(0)
+        compressed = Image.open(buffer).convert("RGB")
+        ela = ImageChops.difference(original, compressed)
+        ela = ImageEnhance.Brightness(ela).enhance(15)
+        ela_arr = np.array(ela)
+        return float(np.mean(ela_arr)), float(np.std(ela_arr))
+    except Exception:
+        return 0.0, 0.0
+
+
+def compute_entropy(img):
+    if img is None:
+        return 0.0
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    hist = cv2.calcHist([gray], [0], None, [256], [0, 256]).ravel()
+    hist = hist / max(hist.sum(), 1.0)
+    hist = hist[hist > 0]
+    return float(-np.sum(hist * np.log2(hist)))
+
+
+def compute_fft_preview(img, size=64):
+    if img is None:
+        return []
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    fft = np.fft.fftshift(np.fft.fft2(gray))
+    magnitude = np.log(np.abs(fft) + 1.0)
+    magnitude = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
+    preview = cv2.resize(magnitude.astype(np.float32), (size, size), interpolation=cv2.INTER_AREA)
+    return np.round(preview, 2).tolist()
+
+
+def compute_heatmap_preview(img, size=64):
+    if img is None:
+        return []
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    laplacian = cv2.Laplacian(gray, cv2.CV_32F)
+    magnitude = cv2.magnitude(grad_x, grad_y) + np.abs(laplacian)
+    magnitude = cv2.GaussianBlur(magnitude, (5, 5), 0)
+    normalized = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX)
+    preview = cv2.resize(normalized.astype(np.float32), (size, size), interpolation=cv2.INTER_AREA)
+    return np.round(preview, 2).tolist()
+
+
+def compute_quality_metrics(img):
+    if img is None:
+        return {
+            'sharpness': 0.0,
+            'blur_score': 100.0,
+            'blur_level': 'High',
+            'brightness': 0.0,
+            'contrast': 0.0,
+            'quality_label': 'Unknown',
+        }
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    brightness = float(np.mean(gray) / 255.0 * 100.0)
+    contrast = float(np.std(gray) / 255.0 * 100.0)
+    blur_score = float(max(0.0, min(100.0, 100.0 - sharpness / 4.0)))
+
+    if sharpness > 150 and contrast > 18:
+        quality_label = 'Excellent'
+    elif sharpness > 80 and contrast > 12:
+        quality_label = 'Good'
+    elif sharpness > 40:
+        quality_label = 'Fair'
+    else:
+        quality_label = 'Soft'
+
+    if blur_score < 35:
+        blur_level = 'Low'
+    elif blur_score < 70:
+        blur_level = 'Medium'
+    else:
+        blur_level = 'High'
+
+    return {
+        'sharpness': sharpness,
+        'blur_score': blur_score,
+        'blur_level': blur_level,
+        'brightness': brightness,
+        'contrast': contrast,
+        'quality_label': quality_label,
+    }
+
+
+def extract_image_metadata(image_path):
+    metadata = {
+        'resolution': 'Unknown',
+        'file_size_kb': 0.0,
+        'channels': 0,
+        'format': 'Unknown',
+        'created': 'Unavailable',
+    }
+    try:
+        with Image.open(image_path) as img:
+            width, height = img.size
+            metadata['resolution'] = f'{width} x {height}'
+            metadata['channels'] = len(img.getbands())
+            metadata['format'] = img.format or 'Unknown'
+            exif = img.getexif()
+            if exif:
+                datetime_original = exif.get(36867) or exif.get(306)
+                if datetime_original:
+                    metadata['created'] = str(datetime_original)
+    except Exception:
+        pass
+
+    try:
+        metadata['file_size_kb'] = round(os.path.getsize(image_path) / 1024.0, 2)
+    except Exception:
+        metadata['file_size_kb'] = 0.0
+
+    return metadata
+
+
+def compare_image_files(path_a, path_b):
+    with Image.open(path_a).convert("RGB") as image_a, Image.open(path_b).convert("RGB") as image_b:
+        size = (256, 256)
+        image_a = image_a.resize(size)
+        image_b = image_b.resize(size)
+        arr_a = np.array(image_a)
+        arr_b = np.array(image_b)
+
+    img_a = cv2.cvtColor(arr_a, cv2.COLOR_RGB2BGR)
+    img_b = cv2.cvtColor(arr_b, cv2.COLOR_RGB2BGR)
+    gray_a = cv2.cvtColor(img_a, cv2.COLOR_BGR2GRAY)
+    gray_b = cv2.cvtColor(img_b, cv2.COLOR_BGR2GRAY)
+
+    hist_a = cv2.calcHist([gray_a], [0], None, [64], [0, 256])
+    hist_b = cv2.calcHist([gray_b], [0], None, [64], [0, 256])
+    cv2.normalize(hist_a, hist_a)
+    cv2.normalize(hist_b, hist_b)
+    histogram_corr = float(cv2.compareHist(hist_a, hist_b, cv2.HISTCMP_CORREL))
+    histogram_similarity = max(0.0, min(100.0, ((histogram_corr + 1.0) / 2.0) * 100.0))
+
+    edge_a = compute_edge_density(img_a)
+    edge_b = compute_edge_density(img_b)
+    edge_similarity = max(0.0, 100.0 - abs(edge_a - edge_b) * 1000.0)
+
+    pixel_delta = float(np.mean(np.abs(arr_a.astype(np.float32) - arr_b.astype(np.float32))) / 255.0 * 100.0)
+    pixel_similarity = max(0.0, 100.0 - pixel_delta)
+
+    overall = round((histogram_similarity * 0.4) + (edge_similarity * 0.25) + (pixel_similarity * 0.35), 2)
+    return {
+        'similarity': overall,
+        'histogram_similarity': round(histogram_similarity, 2),
+        'edge_similarity': round(edge_similarity, 2),
+        'pixel_similarity': round(pixel_similarity, 2),
+        'edge_density_a': round(edge_a, 4),
+        'edge_density_b': round(edge_b, 4),
+        'hist_a': np.round(hist_a.ravel(), 4).tolist(),
+        'hist_b': np.round(hist_b.ravel(), 4).tolist(),
+        'image_a': path_a,
+        'image_b': path_b,
+    }
+
+
 def apply_image_heuristics(ai_score, real_score, stats):
     edge_density = stats['edge_density']
     std_pixel = stats['std_pixel']
+    ela_mean = stats.get('ela_mean', 0.0)
+    texture_score = stats.get('texture_score', 0.0)
+    entropy_score = stats.get('entropy', 0.0)
 
     if edge_density < 0.022 and std_pixel < 42:
         ai_score += 0.035
     elif edge_density > 0.075 and std_pixel > 55:
         real_score += 0.03
+
+    if ela_mean < 18 and texture_score < 0.28:
+        ai_score += 0.02
+    elif ela_mean > 24 and texture_score > 0.34:
+        real_score += 0.02
+
+    if stats.get('contrast_score', 0.0) < 0.12 and stats.get('edge_density', 0.0) < 0.03:
+        ai_score += 0.015
+    elif stats.get('contrast_score', 0.0) > 0.22 and stats.get('edge_density', 0.0) > 0.06:
+        real_score += 0.015
+
+    if entropy_score < 5.4:
+        ai_score += 0.012
+    elif entropy_score > 6.5:
+        real_score += 0.012
 
     return ai_score, real_score
 
@@ -104,40 +311,48 @@ def classify_prediction(model_runs, stats):
 
     weighted_ai = 0.0
     weighted_real = 0.0
+    weighted_unknown = 0.0
     total_weight = 0.0
 
     for run in model_runs:
-        weighted_ai += run['ai_score'] * run['weight']
-        weighted_real += run['real_score'] * run['weight']
-        total_weight += run['weight']
+        weighted_ai += run.get('ai_score', 0.0) * run.get('weight', 1.0)
+        weighted_real += run.get('real_score', 0.0) * run.get('weight', 1.0)
+        weighted_unknown += run.get('unknown_score', 0.0) * run.get('weight', 1.0)
+        total_weight += run.get('weight', 1.0)
 
     if total_weight == 0:
         return 'Error', 0.0, "The detector responses were empty."
 
     avg_ai = weighted_ai / total_weight
     avg_real = weighted_real / total_weight
+    avg_unknown = weighted_unknown / total_weight
     avg_ai, avg_real = apply_image_heuristics(avg_ai, avg_real, stats)
+    avg_unknown = min(1.0, avg_unknown + (0.02 if stats.get('texture_score', 0.0) > 0.38 else 0.0))
 
-    confidence = round(max(avg_ai, avg_real) * 100, 2)
+    confidence = round(max(avg_ai, avg_real, avg_unknown) * 100, 2)
     margin = abs(avg_ai - avg_real)
-    strongest_signal = max(max(run['ai_score'], run['real_score']) for run in model_runs)
-    ai_votes = sum(1 for run in model_runs if run['ai_score'] > run['real_score'])
-    real_votes = sum(1 for run in model_runs if run['real_score'] > run['ai_score'])
+    strongest_signal = max(max(run.get('ai_score', 0.0), run.get('real_score', 0.0)) for run in model_runs)
+    ai_votes = sum(1 for run in model_runs if run.get('ai_score', 0.0) > run.get('real_score', 0.0))
+    real_votes = sum(1 for run in model_runs if run.get('real_score', 0.0) > run.get('ai_score', 0.0))
     vote_gap = abs(ai_votes - real_votes)
 
-    if max(avg_ai, avg_real) < 0.52:
+    if max(avg_ai, avg_real, avg_unknown) < 0.50:
         explanation = "The detector signals were too weak overall, so SecureLens marked this upload as uncertain."
         return 'UNCERTAIN', confidence, explanation
 
-    if margin < 0.035 and strongest_signal < 0.78:
+    if avg_unknown >= max(avg_ai, avg_real) and avg_unknown > 0.58:
+        explanation = "The ensemble could not confidently separate the image from an unknown-looking pattern, so SecureLens stayed cautious."
+        return 'UNCERTAIN', confidence, explanation
+
+    if margin < 0.03 and strongest_signal < 0.76:
         explanation = "The detector votes were too close, so SecureLens marked this upload as uncertain instead of forcing a shaky answer."
         return 'UNCERTAIN', confidence, explanation
 
-    if vote_gap == 0 and strongest_signal < 0.74:
-        explanation = "The detector ensemble split too evenly on this image, so SecureLens left the verdict as uncertain."
+    if vote_gap == 0 and strongest_signal < 0.72:
+        explanation = "The detector ensemble split too evenly and felt too close to call, so SecureLens left the verdict as uncertain."
         return 'UNCERTAIN', confidence, explanation
 
-    if avg_ai > avg_real:
+    if avg_ai > avg_real and avg_ai >= max(0.57, avg_real + 0.06):
         explanation = "Multiple detector signals leaned toward AI-generation more strongly than the real-photo signals."
         return 'AI', confidence, explanation
 
@@ -168,11 +383,37 @@ def load_detectors():
     return detectors
 
 
-def collect_image_stats(img):
+def collect_image_stats(img, image_path=None):
+    mean_pixel = float(np.mean(img)) if img is not None else 0.0
+    std_pixel = float(np.std(img)) if img is not None else 0.0
+    edge_density = compute_edge_density(img) if img is not None else 0.0
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB) if img is not None else None
+    texture_score = float(np.std(lab[:, :, 0]) / 255.0) if lab is not None else 0.0
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img is not None else None
+    contrast_score = float(np.std(gray) / 255.0) if gray is not None else 0.0
+    entropy_score = compute_entropy(img) if img is not None else 0.0
+    fft_preview = compute_fft_preview(img) if img is not None else []
+    ela_mean, ela_std = compute_ela_score(image_path) if image_path else (0.0, 0.0)
+    compression_artifact_score = float(max(0.0, min(100.0, ela_mean * 2.2 + ela_std * 0.8)))
+    if compression_artifact_score < 28:
+        compression_label = 'Low'
+    elif compression_artifact_score < 58:
+        compression_label = 'Medium'
+    else:
+        compression_label = 'High'
+
     return {
-        'mean_pixel': float(np.mean(img)) if img is not None else 0.0,
-        'std_pixel': float(np.std(img)) if img is not None else 0.0,
-        'edge_density': compute_edge_density(img) if img is not None else 0.0,
+        'mean_pixel': mean_pixel,
+        'std_pixel': std_pixel,
+        'edge_density': edge_density,
+        'texture_score': texture_score,
+        'contrast_score': contrast_score,
+        'entropy': entropy_score,
+        'fft_preview': fft_preview,
+        'ela_mean': ela_mean,
+        'ela_std': ela_std,
+        'compression_artifact_score': compression_artifact_score,
+        'compression_label': compression_label,
     }
 
 
@@ -190,8 +431,139 @@ def landing_context(request):
     }
 
 
+def run_analysis_pipeline(obj):
+    img = cv2.imread(obj.image.path)
+    stats = collect_image_stats(img, obj.image.path)
+    metadata = extract_image_metadata(obj.image.path)
+    quality = compute_quality_metrics(img)
+    heatmap_preview = compute_heatmap_preview(img)
+
+    obj.mean_pixel = stats['mean_pixel']
+    obj.std_pixel = stats['std_pixel']
+
+    model_runs = []
+    views = build_analysis_views(obj.image.path)
+    for detector_info in load_detectors():
+        view_summaries = []
+        for view_name, view_img in views:
+            results = detector_info['detector'](view_img)
+            summary = summarize_model_results(results)
+            summary['view_name'] = view_name
+            view_summaries.append(summary)
+
+        summary = {
+            'ai_score': float(np.mean([item['ai_score'] for item in view_summaries])) if view_summaries else 0.0,
+            'real_score': float(np.mean([item['real_score'] for item in view_summaries])) if view_summaries else 0.0,
+            'unknown_score': float(np.mean([item['unknown_score'] for item in view_summaries])) if view_summaries else 0.0,
+            'top_score': max((item['top_score'] for item in view_summaries), default=0.0),
+            'top_label': max(view_summaries, key=lambda item: item['top_score'])['top_label'] if view_summaries else 'unknown',
+            'views': view_summaries,
+        }
+        summary.update({
+            'weight': detector_info['weight'],
+            'model_name': detector_info['name'],
+        })
+        model_runs.append(summary)
+
+    obj.prediction, obj.confidence, explanation = classify_prediction(model_runs, stats)
+    obj.analysis_meta = {
+        'models': model_runs,
+        'stats': stats,
+        'metadata': metadata,
+        'quality': quality,
+        'heatmap_preview': heatmap_preview,
+        'explanation': explanation,
+        'model_count': len(model_runs),
+        'views': [name for name, _ in views],
+        'fft_preview': stats.get('fft_preview', []),
+    }
+    return obj, explanation
+
+
+def create_analysis_record(owner, uploaded_file, batch_id=None):
+    obj = ImageAnalysis(owner=owner, batch_id=batch_id)
+    obj.image.save(uploaded_file.name, uploaded_file, save=False)
+    obj.save()
+    return obj
+
+
+def compute_dataset_metrics(analyses):
+    labeled = [item for item in analyses if item.ground_truth in ('AI', 'REAL') and item.prediction in ('AI', 'REAL')]
+    total = len(labeled)
+    if not total:
+        return {
+            'labeled_total': 0,
+            'accuracy': 0.0,
+            'precision': 0.0,
+            'recall': 0.0,
+            'confusion': {
+                'ai_ai': 0,
+                'ai_real': 0,
+                'real_ai': 0,
+                'real_real': 0,
+            },
+        }
+
+    ai_ai = sum(1 for item in labeled if item.ground_truth == 'AI' and item.prediction == 'AI')
+    ai_real = sum(1 for item in labeled if item.ground_truth == 'REAL' and item.prediction == 'AI')
+    real_ai = sum(1 for item in labeled if item.ground_truth == 'AI' and item.prediction == 'REAL')
+    real_real = sum(1 for item in labeled if item.ground_truth == 'REAL' and item.prediction == 'REAL')
+
+    precision_ai = ai_ai / max(ai_ai + ai_real, 1)
+    recall_ai = ai_ai / max(ai_ai + real_ai, 1)
+    precision_real = real_real / max(real_real + real_ai, 1)
+    recall_real = real_real / max(real_real + ai_real, 1)
+    macro_precision = (precision_ai + precision_real) / 2
+    macro_recall = (recall_ai + recall_real) / 2
+    accuracy = (ai_ai + real_real) / total
+
+    return {
+        'labeled_total': total,
+        'accuracy': float(accuracy),
+        'precision': float(macro_precision),
+        'recall': float(macro_recall),
+        'confusion': {
+            'ai_ai': ai_ai,
+            'ai_real': ai_real,
+            'real_ai': real_ai,
+            'real_real': real_real,
+        },
+    }
+
+
+def uploaded_file_to_data_url(uploaded_file):
+    content = uploaded_file.read()
+    uploaded_file.seek(0)
+    mime_type = getattr(uploaded_file, 'content_type', None) or 'image/png'
+    encoded = base64.b64encode(content).decode('ascii')
+    return f'data:{mime_type};base64,{encoded}'
+
+
+def write_temp_upload(uploaded_file):
+    suffix = os.path.splitext(uploaded_file.name)[1] or '.png'
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        for chunk in uploaded_file.chunks():
+            temp_file.write(chunk)
+    finally:
+        temp_file.close()
+    return temp_file.name
+
+
 def home(request):
     return render(request, 'dashboard/home.html', landing_context(request))
+
+
+def about(request):
+    return render(request, 'dashboard/about.html', landing_context(request))
+
+
+def features(request):
+    return render(request, 'dashboard/features.html', landing_context(request))
+
+
+def research(request):
+    return render(request, 'dashboard/research.html', landing_context(request))
 
 
 def register(request):
@@ -230,33 +602,24 @@ class SecureLensLogoutView(LogoutView):
 def analyze(request):
     form = ImageUploadForm(request.POST or None, request.FILES or None)
     if request.method == 'POST' and form.is_valid():
-        obj = form.save(commit=False)
-        obj.owner = request.user
-        obj.save()
-
-        img = cv2.imread(obj.image.path)
-        stats = collect_image_stats(img)
-        obj.mean_pixel = stats['mean_pixel']
-        obj.std_pixel = stats['std_pixel']
-
+        obj = None
         try:
-            pil_img = Image.open(obj.image.path).convert('RGB')
-            model_runs = []
-            for detector_info in load_detectors():
-                results = detector_info['detector'](pil_img)
-                summary = summarize_model_results(results)
-                summary.update({
-                    'weight': detector_info['weight'],
-                    'model_name': detector_info['name'],
-                })
-                model_runs.append(summary)
-
-            obj.prediction, obj.confidence, explanation = classify_prediction(model_runs, stats)
+            obj = create_analysis_record(request.user, form.cleaned_data['image'])
+            obj, explanation = run_analysis_pipeline(obj)
             request.session['last_securelens_explanation'] = explanation
         except Exception as error:
             print(f"❌ Prediction error: {error}")
+            if obj is None:
+                obj = form.save(commit=False)
+                obj.owner = request.user
+                obj.save()
+            img = cv2.imread(obj.image.path)
+            stats = collect_image_stats(img, obj.image.path)
+            obj.mean_pixel = stats['mean_pixel']
+            obj.std_pixel = stats['std_pixel']
             obj.prediction = 'Error'
             obj.confidence = 0.0
+            obj.analysis_meta = {'error': str(error), 'stats': stats}
             request.session['last_securelens_explanation'] = "SecureLens hit an error while running the detector."
 
         obj.save()
@@ -280,9 +643,176 @@ def result(request, pk):
             'UNCERTAIN': "This upload landed too close to the middle, so SecureLens chose caution over pretending certainty.",
         }
         explanation = explanations.get(obj.prediction, "This result was saved to your account history.")
+    score_label = obj.prediction
+    if obj.prediction in ('AI', 'REAL'):
+        score_text = f"{int(round(obj.confidence))}% {obj.prediction.title()}"
+    elif obj.prediction == 'UNCERTAIN':
+        score_text = f"{int(round(obj.confidence))}% Uncertain"
+    else:
+        score_text = obj.prediction
     return render(request, 'dashboard/result.html', {
         'obj': obj,
         'result_explanation': explanation,
+        'analysis_meta': obj.analysis_meta or {},
+        'score_text': score_text,
+        'authenticity_label': score_label,
+        'fft_preview_json': json.dumps((obj.analysis_meta or {}).get('fft_preview', [])),
+        'heatmap_preview_json': json.dumps((obj.analysis_meta or {}).get('heatmap_preview', [])),
+    })
+
+
+@login_required
+def label_analysis(request, pk):
+    obj = get_object_or_404(ImageAnalysis, pk=pk, owner=request.user)
+    if request.method == 'POST':
+        ground_truth = request.POST.get('ground_truth')
+        if ground_truth in ('AI', 'REAL', 'UNCERTAIN'):
+            obj.ground_truth = ground_truth
+            obj.save(update_fields=['ground_truth'])
+            messages.success(request, f'Marked this analysis as {ground_truth}.')
+    return redirect('result', pk=obj.pk)
+
+
+@login_required
+def export_report(request, pk):
+    obj = get_object_or_404(ImageAnalysis, pk=pk, owner=request.user)
+    analysis_meta = obj.analysis_meta or {}
+    metadata = analysis_meta.get('metadata', {})
+    quality = analysis_meta.get('quality', {})
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.platypus import Image as RLImage
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except Exception:
+        lines = [
+            f"SecureLens report for {obj.image.name}",
+            f"Prediction: {obj.prediction}",
+            f"Confidence: {obj.confidence:.2f}%",
+            f"Resolution: {metadata.get('resolution', 'Unknown')}",
+            f"File size: {metadata.get('file_size_kb', 0)} KB",
+            f"Sharpness: {quality.get('sharpness', 0):.2f}",
+            f"Entropy: {analysis_meta.get('stats', {}).get('entropy', 0):.2f}",
+        ]
+        response = HttpResponse("\n".join(lines), content_type='text/plain')
+        response['Content-Disposition'] = f'attachment; filename="securelens-report-{obj.pk}.txt"'
+        return response
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("SecureLens Analysis Report", styles['Title']),
+        Spacer(1, 0.2 * inch),
+        Paragraph(f"Prediction: <b>{obj.prediction}</b> | Confidence: <b>{obj.confidence:.2f}%</b>", styles['BodyText']),
+        Spacer(1, 0.12 * inch),
+    ]
+
+    try:
+        story.append(RLImage(obj.image.path, width=4.6 * inch, height=3.2 * inch))
+        story.append(Spacer(1, 0.18 * inch))
+    except Exception:
+        pass
+
+        rows = [
+            ['Field', 'Value'],
+            ['Resolution', metadata.get('resolution', 'Unknown')],
+            ['File size (KB)', metadata.get('file_size_kb', 0)],
+            ['Channels', metadata.get('channels', 0)],
+            ['Format', metadata.get('format', 'Unknown')],
+            ['Created', metadata.get('created', 'Unavailable')],
+            ['Entropy', f"{analysis_meta.get('stats', {}).get('entropy', 0):.2f}"],
+            ['Edge density', f"{analysis_meta.get('stats', {}).get('edge_density', 0):.3f}"],
+            ['Sharpness', f"{quality.get('sharpness', 0):.2f}"],
+            ['Blur score', f"{quality.get('blur_score', 0):.2f}"],
+            ['Blur level', quality.get('blur_level', 'Unknown')],
+            ['Quality label', quality.get('quality_label', 'Unknown')],
+            ['Brightness', f"{quality.get('brightness', 0):.2f}"],
+            ['Contrast', f"{quality.get('contrast', 0):.2f}"],
+        ]
+    table = Table(rows, colWidths=[2 * inch, 3.7 * inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f4ecff')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#2f2537')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#d8cfee')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#faf7ff')]),
+    ]))
+    story.extend([
+        table,
+        Spacer(1, 0.18 * inch),
+        Paragraph(f"Result explanation: {obj.analysis_meta.get('explanation', 'No explanation saved.')}", styles['BodyText']),
+    ])
+    doc.build(story)
+    response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="securelens-report-{obj.pk}.pdf"'
+    return response
+
+
+@login_required
+def batch_analyze(request):
+    results = []
+    batch_id = uuid4().hex[:10]
+    if request.method == 'POST':
+        uploads = request.FILES.getlist('images')
+        if not uploads:
+            messages.error(request, 'Please choose one or more images for batch analysis.')
+        else:
+            for uploaded in uploads:
+                try:
+                    obj = create_analysis_record(request.user, uploaded, batch_id=batch_id)
+                    obj, explanation = run_analysis_pipeline(obj)
+                    obj.save()
+                    results.append({'obj': obj, 'explanation': explanation})
+                except Exception as error:
+                    messages.error(request, f'Batch item {uploaded.name} failed: {error}')
+            if results:
+                messages.success(request, f'Batch analysis complete for {len(results)} image(s).')
+    return render(request, 'dashboard/batch.html', {
+        'batch_id': batch_id,
+        'results': results,
+        'analysis_count': request.user.analyses.count(),
+    })
+
+
+@login_required
+def compare(request):
+    comparison = None
+    image_a_data_url = None
+    image_b_data_url = None
+    if request.method == 'POST':
+        image_a = request.FILES.get('image_a')
+        image_b = request.FILES.get('image_b')
+        if not image_a or not image_b:
+            messages.error(request, 'Please upload two images to compare.')
+        else:
+            temp_a = write_temp_upload(image_a)
+            temp_b = write_temp_upload(image_b)
+            try:
+                comparison = compare_image_files(temp_a, temp_b)
+                with open(temp_a, 'rb') as file_a:
+                    image_a_data_url = f"data:{image_a.content_type or 'image/png'};base64,{base64.b64encode(file_a.read()).decode('ascii')}"
+                with open(temp_b, 'rb') as file_b:
+                    image_b_data_url = f"data:{image_b.content_type or 'image/png'};base64,{base64.b64encode(file_b.read()).decode('ascii')}"
+                messages.success(request, 'Comparison completed.')
+            finally:
+                try:
+                    os.unlink(temp_a)
+                except Exception:
+                    pass
+                try:
+                    os.unlink(temp_b)
+                except Exception:
+                    pass
+    return render(request, 'dashboard/compare.html', {
+        'comparison': comparison,
+        'image_a_data_url': image_a_data_url,
+        'image_b_data_url': image_b_data_url,
+        'hist_a_json': json.dumps((comparison or {}).get('hist_a', [])),
+        'hist_b_json': json.dumps((comparison or {}).get('hist_b', [])),
     })
 
 
@@ -309,12 +839,37 @@ def stats(request):
     ai_count = analyses.filter(prediction='AI').count()
     uncertain_count = analyses.filter(prediction='UNCERTAIN').count()
     avg_confidence = analyses.aggregate(Avg('confidence'))['confidence__avg'] or 0
+    avg_entropy = 0.0
+    avg_edge_density = 0.0
+    meta_rows = [item.analysis_meta.get('stats', {}) for item in analyses if isinstance(item.analysis_meta, dict)]
+    if meta_rows:
+        entropy_values = [row.get('entropy') for row in meta_rows if row.get('entropy') is not None]
+        edge_values = [row.get('edge_density') for row in meta_rows if row.get('edge_density') is not None]
+        avg_entropy = float(np.mean(entropy_values)) if entropy_values else 0.0
+        avg_edge_density = float(np.mean(edge_values)) if edge_values else 0.0
     latest = analyses.order_by('-uploaded_at')[:5]
+    dataset_window = list(analyses.order_by('uploaded_at')[:50])
+    labels = [item.uploaded_at.strftime('%m-%d') for item in dataset_window]
+    entropy_series = [float((item.analysis_meta or {}).get('stats', {}).get('entropy', 0.0)) for item in dataset_window]
+    edge_series = [float((item.analysis_meta or {}).get('stats', {}).get('edge_density', 0.0)) for item in dataset_window]
+    confidence_series = [float(item.confidence or 0.0) for item in dataset_window]
+    metadata_count = sum(1 for item in dataset_window if (item.analysis_meta or {}).get('metadata'))
+    performance = compute_dataset_metrics(analyses)
     return render(request, 'dashboard/stats.html', {
         'total': total,
         'real_count': real_count,
         'ai_count': ai_count,
         'uncertain_count': uncertain_count,
         'avg_confidence': avg_confidence,
+        'avg_entropy': avg_entropy,
+        'avg_edge_density': avg_edge_density,
         'latest': latest,
+        'labels_json': json.dumps(labels),
+        'entropy_json': json.dumps(entropy_series),
+        'edge_json': json.dumps(edge_series),
+        'confidence_json': json.dumps(confidence_series),
+        'metadata_count': metadata_count,
+        'performance': performance,
+        'dataset_total': total,
+        'dataset_window_size': len(dataset_window),
     })
