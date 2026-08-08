@@ -91,3 +91,23 @@ class SecureLensPredictionTests(TestCase):
         self.assertEqual(prediction, 'REAL')
         self.assertGreater(confidence, 70)
         self.assertIn('real photograph', explanation.lower())
+
+    def test_webcam_capture_is_real_with_evidence_based_confidence(self):
+        prediction, confidence, explanation = classify_prediction(
+            [
+                {'ai_score': 0.98, 'real_score': 0.02, 'weight': 1.0},
+                {'ai_score': 0.91, 'real_score': 0.04, 'weight': 1.0},
+            ],
+            {
+                'capture_source': 'webcam',
+                'entropy': 6.8,
+                'edge_density': 0.06,
+                'contrast_score': 0.2,
+                'high_frequency_ratio': 0.25,
+                'compression_artifact_score': 35.0,
+            },
+        )
+        self.assertEqual(prediction, 'REAL')
+        self.assertLess(confidence, 99.0)
+        self.assertGreater(confidence, 55.0)
+        self.assertIn('captured live', explanation.lower())

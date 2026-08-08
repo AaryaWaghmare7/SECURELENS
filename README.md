@@ -7,7 +7,7 @@ SecureLens is a Django-based image authenticity studio for comparing AI-generate
 - Single-image AI vs real analysis
 - Batch analysis with a card-based matrix layout
 - Two-image comparison mode
-- Gesture-to-emoji webcam demo
+- Live webcam frame capture for direct analysis
 - Image metadata, compression cues, and quality metrics
 - FFT and heatmap visual evidence
 - Saved account history and stats
@@ -56,6 +56,24 @@ Then open `http://127.0.0.1:8000/`.
 - `/stats/` Dataset and performance dashboard
 - `/history/` Saved analyses
 
+## Model testing
+
+Use the batch page when you want to upload many images visually. If all uploaded images have the same known label, choose `All images are real` or `All images are AI generated` before submitting. SecureLens will show a matrix of image cards and calculate how many predictions matched the known label.
+
+For a larger labeled dataset, use the CIFAKE evaluator:
+
+```bash
+python manage.py evaluate_cifake --download --limit 100
+```
+
+Or run it against a dataset already on your laptop:
+
+```bash
+python manage.py evaluate_cifake --dataset-root /path/to/dataset --limit 100
+```
+
+The command prints accuracy, AI precision/recall, REAL precision/recall, uncertain count, and a confusion matrix.
+
 ## Research signals
 
 - Resolution
@@ -70,6 +88,7 @@ Then open `http://127.0.0.1:8000/`.
 ## Notes
 
 - SecureLens is cautious by design and can return `UNCERTAIN` when signals are too close.
+- Live webcam captures are treated as trusted camera-source captures, but the confidence still comes from image evidence like entropy, FFT, edges, contrast, and compression loss.
 - The app uses multiple detector views and heuristic image cues together instead of one weak label.
 - If you deploy to Render or another host, the database can switch to PostgreSQL through `DATABASE_URL`.
 

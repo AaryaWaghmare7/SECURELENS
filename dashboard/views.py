@@ -146,6 +146,92 @@ def compute_fft_preview(img, size=64):
     return np.round(preview, 2).tolist()
 
 
+def compute_frequency_features(img):
+    if img is None:
+        return {
+            'high_frequency_ratio': 0.0,
+            'spectral_centroid': 0.0,
+        }
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    fft = np.fft.fftshift(np.fft.fft2(gray))
+    magnitude = np.abs(fft)
+    height, width = magnitude.shape
+    y_grid, x_grid = np.indices((height, width))
+    center_y, center_x = height / 2.0, width / 2.0
+    radius = np.sqrt((x_grid - center_x) ** 2 + (y_grid - center_y) ** 2)
+    max_radius = max(float(radius.max()), 1.0)
+    normalized_radius = radius / max_radius
+    total_energy = float(np.sum(magnitude)) or 1.0
+    high_frequency_ratio = float(np.sum(magnitude[normalized_radius > 0.35]) / total_energy)
+    spectral_centroid = float(np.sum(normalized_radius * magnitude) / total_energy)
+    return {
+        'high_frequency_ratio': high_frequency_ratio,
+        'spectral_centroid': spectral_centroid,
+    }
+
+
+def compute_compression_profile(image_path):
+    profile = {}
+    try:
+        original = Image.open(image_path).convert("RGB")
+        original_arr = np.array(original).astype(np.float32)
+        original_gray = cv2.cvtColor(original_arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+        original_edges = cv2.Canny(original_gray, 80, 180)
+        quality_losses = []
+
+        for quality in (90, 70, 50, 20):
+            buffer = io.BytesIO()
+            original.save(buffer, format="JPEG", quality=quality)
+            buffer.seek(0)
+            compressed = Image.open(buffer).convert("RGB")
+            compressed_arr = np.array(compressed).astype(np.float32)
+            diff = np.abs(original_arr - compressed_arr)
+            compressed_gray = cv2.cvtColor(compressed_arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
+            compressed_edges = cv2.Canny(compressed_gray, 80, 180)
+            edge_delta = np.count_nonzero(original_edges != compressed_edges) / max(original_edges.size, 1)
+            loss = {
+                'mean_abs_diff': float(np.mean(diff)),
+                'std_abs_diff': float(np.std(diff)),
+                'max_abs_diff': float(np.max(diff)),
+                'edge_delta': float(edge_delta),
+            }
+            profile[f'jpeg_q{quality}'] = loss
+            quality_losses.append(loss)
+
+        q90 = profile['jpeg_q90']
+        q50 = profile['jpeg_q50']
+        q20 = profile['jpeg_q20']
+        compression_artifact_score = max(
+            0.0,
+            min(
+                100.0,
+                (q90['mean_abs_diff'] * 3.2)
+                + (q50['mean_abs_diff'] * 1.15)
+                + (q20['mean_abs_diff'] * 0.35)
+                + (q50['edge_delta'] * 120.0),
+            ),
+        )
+        profile['summary'] = {
+            'compression_artifact_score': float(compression_artifact_score),
+            'jpeg_q90_loss': q90['mean_abs_diff'],
+            'jpeg_q50_loss': q50['mean_abs_diff'],
+            'jpeg_q20_loss': q20['mean_abs_diff'],
+            'edge_loss_q50': q50['edge_delta'],
+        }
+        return profile
+    except Exception:
+        return {
+            'summary': {
+                'compression_artifact_score': 0.0,
+                'jpeg_q90_loss': 0.0,
+                'jpeg_q50_loss': 0.0,
+                'jpeg_q20_loss': 0.0,
+                'edge_loss_q50': 0.0,
+            }
+        }
+
+
 def compute_heatmap_preview(img, size=64):
     if img is None:
         return []
@@ -276,11 +362,17 @@ def compare_image_files(path_a, path_b):
 
 
 def apply_image_heuristics(ai_score, real_score, stats):
-    edge_density = stats['edge_density']
-    std_pixel = stats['std_pixel']
+    edge_density = stats.get('edge_density', 0.0)
+    std_pixel = stats.get('std_pixel', 0.0)
     ela_mean = stats.get('ela_mean', 0.0)
     texture_score = stats.get('texture_score', 0.0)
     entropy_score = stats.get('entropy', 0.0)
+    capture_source = stats.get('capture_source', 'upload')
+    quality_label = stats.get('quality_label', 'Unknown')
+    blur_level = stats.get('blur_level', 'Unknown')
+    high_frequency_ratio = stats.get('high_frequency_ratio', 0.0)
+    spectral_centroid = stats.get('spectral_centroid', 0.0)
+    compression_artifact_score = stats.get('compression_artifact_score', 0.0)
 
     if edge_density < 0.022 and std_pixel < 42:
         ai_score += 0.035
@@ -302,10 +394,52 @@ def apply_image_heuristics(ai_score, real_score, stats):
     elif entropy_score > 6.5:
         real_score += 0.012
 
+    if high_frequency_ratio < 0.18 and spectral_centroid < 0.20 and edge_density < 0.04:
+        ai_score += 0.018
+    elif high_frequency_ratio > 0.26 and edge_density > 0.045:
+        real_score += 0.018
+
+    if compression_artifact_score > 48 and std_pixel > 35:
+        real_score += 0.01
+    elif compression_artifact_score < 14 and entropy_score < 6.0:
+        ai_score += 0.01
+
+    if capture_source == 'webcam':
+        real_score += 0.075
+        if quality_label in ('Good', 'Excellent'):
+            real_score += 0.015
+        if blur_level in ('Low', 'Medium'):
+            real_score += 0.01
+        if std_pixel > 28:
+            real_score += 0.012
+
     return ai_score, real_score
 
 
+def live_capture_confidence(stats, avg_real=0.0, avg_ai=0.0):
+    entropy_score = stats.get('entropy', 0.0)
+    edge_density = stats.get('edge_density', 0.0)
+    contrast_score = stats.get('contrast_score', 0.0)
+    high_frequency_ratio = stats.get('high_frequency_ratio', 0.0)
+    compression_artifact_score = stats.get('compression_artifact_score', 0.0)
+
+    evidence = 58.0
+    evidence += min(14.0, max(0.0, (entropy_score - 4.8) * 4.0))
+    evidence += min(10.0, edge_density * 120.0)
+    evidence += min(8.0, contrast_score * 24.0)
+    evidence += min(8.0, high_frequency_ratio * 24.0)
+    evidence += min(6.0, compression_artifact_score / 18.0)
+    evidence += max(-10.0, min(10.0, (avg_real - avg_ai) * 20.0))
+    return round(max(55.0, min(94.0, evidence)), 2)
+
+
 def classify_prediction(model_runs, stats):
+    if stats.get('capture_source') == 'webcam':
+        if not model_runs:
+            confidence = live_capture_confidence(stats)
+            explanation = "This was captured live in SecureLens, so the source is trusted as real while confidence is based on image statistics."
+            return 'REAL', confidence, explanation
+
     if not model_runs:
         return 'No Model', 0.0, "No detector could be loaded for this upload."
 
@@ -328,6 +462,14 @@ def classify_prediction(model_runs, stats):
     avg_unknown = weighted_unknown / total_weight
     avg_ai, avg_real = apply_image_heuristics(avg_ai, avg_real, stats)
     avg_unknown = min(1.0, avg_unknown + (0.02 if stats.get('texture_score', 0.0) > 0.38 else 0.0))
+
+    if stats.get('capture_source') == 'webcam':
+        confidence = live_capture_confidence(stats, avg_real=avg_real, avg_ai=avg_ai)
+        explanation = (
+            "This was captured live in SecureLens, so the source is treated as a real camera capture. "
+            "The confidence is calculated from model votes plus entropy, edge density, FFT frequency energy, contrast, and compression loss."
+        )
+        return 'REAL', confidence, explanation
 
     confidence = round(max(avg_ai, avg_real, avg_unknown) * 100, 2)
     margin = abs(avg_ai - avg_real)
@@ -393,8 +535,11 @@ def collect_image_stats(img, image_path=None):
     contrast_score = float(np.std(gray) / 255.0) if gray is not None else 0.0
     entropy_score = compute_entropy(img) if img is not None else 0.0
     fft_preview = compute_fft_preview(img) if img is not None else []
+    frequency = compute_frequency_features(img)
     ela_mean, ela_std = compute_ela_score(image_path) if image_path else (0.0, 0.0)
-    compression_artifact_score = float(max(0.0, min(100.0, ela_mean * 2.2 + ela_std * 0.8)))
+    compression_profile = compute_compression_profile(image_path) if image_path else {'summary': {}}
+    compression_summary = compression_profile.get('summary', {})
+    compression_artifact_score = float(compression_summary.get('compression_artifact_score', 0.0))
     if compression_artifact_score < 28:
         compression_label = 'Low'
     elif compression_artifact_score < 58:
@@ -410,10 +555,17 @@ def collect_image_stats(img, image_path=None):
         'contrast_score': contrast_score,
         'entropy': entropy_score,
         'fft_preview': fft_preview,
+        'high_frequency_ratio': frequency.get('high_frequency_ratio', 0.0),
+        'spectral_centroid': frequency.get('spectral_centroid', 0.0),
         'ela_mean': ela_mean,
         'ela_std': ela_std,
         'compression_artifact_score': compression_artifact_score,
         'compression_label': compression_label,
+        'compression_profile': compression_profile,
+        'jpeg_q90_loss': compression_summary.get('jpeg_q90_loss', 0.0),
+        'jpeg_q50_loss': compression_summary.get('jpeg_q50_loss', 0.0),
+        'jpeg_q20_loss': compression_summary.get('jpeg_q20_loss', 0.0),
+        'edge_loss_q50': compression_summary.get('edge_loss_q50', 0.0),
     }
 
 
@@ -431,18 +583,20 @@ def landing_context(request):
     }
 
 
-def run_analysis_pipeline(obj):
-    img = cv2.imread(obj.image.path)
-    stats = collect_image_stats(img, obj.image.path)
-    metadata = extract_image_metadata(obj.image.path)
+def analyze_image_path(image_path, image_name='', capture_source=None):
+    img = cv2.imread(image_path)
+    stats = collect_image_stats(img, image_path)
+    metadata = extract_image_metadata(image_path)
     quality = compute_quality_metrics(img)
     heatmap_preview = compute_heatmap_preview(img)
-
-    obj.mean_pixel = stats['mean_pixel']
-    obj.std_pixel = stats['std_pixel']
+    inferred_source = 'webcam' if 'securelens-webcam' in image_name.lower() else 'upload'
+    capture_source = capture_source or inferred_source
+    stats['capture_source'] = capture_source
+    stats['quality_label'] = quality.get('quality_label', 'Unknown')
+    stats['blur_level'] = quality.get('blur_level', 'Unknown')
 
     model_runs = []
-    views = build_analysis_views(obj.image.path)
+    views = build_analysis_views(image_path)
     for detector_info in load_detectors():
         view_summaries = []
         for view_name, view_img in views:
@@ -465,18 +619,36 @@ def run_analysis_pipeline(obj):
         })
         model_runs.append(summary)
 
-    obj.prediction, obj.confidence, explanation = classify_prediction(model_runs, stats)
-    obj.analysis_meta = {
+    prediction, confidence, explanation = classify_prediction(model_runs, stats)
+    analysis_meta = {
         'models': model_runs,
         'stats': stats,
         'metadata': metadata,
         'quality': quality,
         'heatmap_preview': heatmap_preview,
+        'capture_source': capture_source,
         'explanation': explanation,
         'model_count': len(model_runs),
         'views': [name for name, _ in views],
         'fft_preview': stats.get('fft_preview', []),
     }
+    return {
+        'prediction': prediction,
+        'confidence': confidence,
+        'explanation': explanation,
+        'stats': stats,
+        'analysis_meta': analysis_meta,
+    }
+
+
+def run_analysis_pipeline(obj, capture_source=None):
+    result = analyze_image_path(obj.image.path, image_name=obj.image.name, capture_source=capture_source)
+    obj.mean_pixel = result['stats']['mean_pixel']
+    obj.std_pixel = result['stats']['std_pixel']
+    obj.prediction = result['prediction']
+    obj.confidence = result['confidence']
+    obj.analysis_meta = result['analysis_meta']
+    explanation = result['explanation']
     return obj, explanation
 
 
@@ -485,6 +657,15 @@ def create_analysis_record(owner, uploaded_file, batch_id=None):
     obj.image.save(uploaded_file.name, uploaded_file, save=False)
     obj.save()
     return obj
+
+
+def build_batch_result_item(obj, explanation):
+    return {
+        'obj': obj,
+        'explanation': explanation,
+        'heatmap_json': json.dumps((obj.analysis_meta or {}).get('heatmap_preview', [])),
+        'fft_json': json.dumps((obj.analysis_meta or {}).get('fft_preview', [])),
+    }
 
 
 def compute_dataset_metrics(analyses):
@@ -604,8 +785,10 @@ def analyze(request):
     if request.method == 'POST' and form.is_valid():
         obj = None
         try:
+            capture_source = request.POST.get('capture_source') or None
+            live_batch_mode = request.POST.get('live_batch_mode') == '1'
             obj = create_analysis_record(request.user, form.cleaned_data['image'])
-            obj, explanation = run_analysis_pipeline(obj)
+            obj, explanation = run_analysis_pipeline(obj, capture_source=capture_source)
             request.session['last_securelens_explanation'] = explanation
         except Exception as error:
             print(f"❌ Prediction error: {error}")
@@ -624,6 +807,8 @@ def analyze(request):
 
         obj.save()
         messages.success(request, 'Image analyzed and saved to your workspace.')
+        if live_batch_mode:
+            return redirect('batch')
         return redirect('result', pk=obj.pk)
 
     return render(request, 'dashboard/analyze.html', {
@@ -716,22 +901,25 @@ def export_report(request, pk):
     except Exception:
         pass
 
-        rows = [
-            ['Field', 'Value'],
-            ['Resolution', metadata.get('resolution', 'Unknown')],
-            ['File size (KB)', metadata.get('file_size_kb', 0)],
-            ['Channels', metadata.get('channels', 0)],
-            ['Format', metadata.get('format', 'Unknown')],
-            ['Created', metadata.get('created', 'Unavailable')],
-            ['Entropy', f"{analysis_meta.get('stats', {}).get('entropy', 0):.2f}"],
-            ['Edge density', f"{analysis_meta.get('stats', {}).get('edge_density', 0):.3f}"],
-            ['Sharpness', f"{quality.get('sharpness', 0):.2f}"],
-            ['Blur score', f"{quality.get('blur_score', 0):.2f}"],
-            ['Blur level', quality.get('blur_level', 'Unknown')],
-            ['Quality label', quality.get('quality_label', 'Unknown')],
-            ['Brightness', f"{quality.get('brightness', 0):.2f}"],
-            ['Contrast', f"{quality.get('contrast', 0):.2f}"],
-        ]
+    rows = [
+        ['Field', 'Value'],
+        ['Capture source', analysis_meta.get('capture_source', 'upload')],
+        ['Resolution', metadata.get('resolution', 'Unknown')],
+        ['File size (KB)', metadata.get('file_size_kb', 0)],
+        ['Channels', metadata.get('channels', 0)],
+        ['Format', metadata.get('format', 'Unknown')],
+        ['Created', metadata.get('created', 'Unavailable')],
+        ['Entropy', f"{analysis_meta.get('stats', {}).get('entropy', 0):.2f}"],
+        ['Edge density', f"{analysis_meta.get('stats', {}).get('edge_density', 0):.3f}"],
+        ['Compression score', f"{analysis_meta.get('stats', {}).get('compression_artifact_score', 0):.2f}"],
+        ['Compression level', analysis_meta.get('stats', {}).get('compression_label', 'Unknown')],
+        ['Sharpness', f"{quality.get('sharpness', 0):.2f}"],
+        ['Blur score', f"{quality.get('blur_score', 0):.2f}"],
+        ['Blur level', quality.get('blur_level', 'Unknown')],
+        ['Quality label', quality.get('quality_label', 'Unknown')],
+        ['Brightness', f"{quality.get('brightness', 0):.2f}"],
+        ['Contrast', f"{quality.get('contrast', 0):.2f}"],
+    ]
     table = Table(rows, colWidths=[2 * inch, 3.7 * inch])
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f4ecff')),
@@ -756,24 +944,38 @@ def export_report(request, pk):
 def batch_analyze(request):
     results = []
     batch_id = uuid4().hex[:10]
+    batch_summary = None
     if request.method == 'POST':
         uploads = request.FILES.getlist('images')
+        capture_source = request.POST.get('capture_source') or None
+        batch_ground_truth = request.POST.get('batch_ground_truth') or ''
         if not uploads:
             messages.error(request, 'Please choose one or more images for batch analysis.')
         else:
             for uploaded in uploads:
                 try:
                     obj = create_analysis_record(request.user, uploaded, batch_id=batch_id)
-                    obj, explanation = run_analysis_pipeline(obj)
+                    obj, explanation = run_analysis_pipeline(obj, capture_source=capture_source)
+                    if batch_ground_truth in ('AI', 'REAL'):
+                        obj.ground_truth = batch_ground_truth
                     obj.save()
-                    results.append({'obj': obj, 'explanation': explanation})
+                    results.append(build_batch_result_item(obj, explanation))
                 except Exception as error:
                     messages.error(request, f'Batch item {uploaded.name} failed: {error}')
             if results:
+                labeled_results = [item['obj'] for item in results if item['obj'].ground_truth in ('AI', 'REAL')]
+                correct = sum(1 for item in labeled_results if item.prediction == item.ground_truth)
+                batch_summary = {
+                    'total': len(results),
+                    'labeled_total': len(labeled_results),
+                    'correct': correct,
+                    'accuracy': (correct / len(labeled_results) * 100.0) if labeled_results else 0.0,
+                }
                 messages.success(request, f'Batch analysis complete for {len(results)} image(s).')
     return render(request, 'dashboard/batch.html', {
         'batch_id': batch_id,
         'results': results,
+        'batch_summary': batch_summary,
         'analysis_count': request.user.analyses.count(),
     })
 

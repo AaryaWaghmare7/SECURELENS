@@ -36,6 +36,12 @@
             <h3 style="margin:0 0 10px;">Drop in a batch of images</h3>
             <p class="muted">SecureLens will analyze each one and save the results to your history.</p>
             <input type="file" name="images" id="batch-images" accept="image/*" multiple class="form-input" style="max-width: 520px; margin: 18px auto 0; display:block;">
+            <label for="batch-ground-truth" class="muted" style="display:block; margin-top:18px;">Known label for this batch, if you are testing accuracy</label>
+            <select name="batch_ground_truth" id="batch-ground-truth" class="form-input" style="max-width: 360px; margin: 8px auto 0; display:block;">
+                <option value="">Unknown / mixed</option>
+                <option value="REAL">All images are real</option>
+                <option value="AI">All images are AI generated</option>
+            </select>
         </div>
         <div class="button-row">
             <button type="submit" class="btn btn-primary">Run batch analysis</button>
@@ -49,6 +55,26 @@
         <h2>Batch results</h2>
         <span class="muted">Batch ID: {{ batch_id }}</span>
     </div>
+    {% if batch_summary %}
+        <div class="metric-grid" style="margin-bottom:18px;">
+            <div class="metric-card">
+                <div class="metric-number">{{ batch_summary.total }}</div>
+                <div>Images tested</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ batch_summary.labeled_total }}</div>
+                <div>Images with known label</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ batch_summary.correct }}</div>
+                <div>Correct predictions</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-number">{{ batch_summary.accuracy|floatformat:1 }}%</div>
+                <div>Batch accuracy</div>
+            </div>
+        </div>
+    {% endif %}
     <div class="feature-grid" style="grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));">
         {% for item in results %}
             <div class="feature-card" style="overflow:hidden;">
@@ -59,9 +85,19 @@
                     </span>
                     <strong>{{ item.obj.confidence|floatformat:2 }}%</strong>
                 </div>
+                {% if item.obj.ground_truth %}
+                    <p class="muted" style="margin:10px 0 0;">
+                        Known label: <strong>{{ item.obj.ground_truth }}</strong>.
+                        {% if item.obj.prediction == item.obj.ground_truth %}
+                            Match.
+                        {% else %}
+                            Mismatch.
+                        {% endif %}
+                    </p>
+                {% endif %}
                 <div class="glass-card" style="margin-top:14px; padding:14px;">
                     <div class="page-kicker" style="margin-bottom:10px;">Heatmap preview</div>
-                    <canvas class="batch-heatmap" data-matrix='{{ item.obj.analysis_meta.heatmap_preview|default:"[]"|escapejs }}' style="width:100%; aspect-ratio:1/1; border-radius:16px; background:#120913;"></canvas>
+                    <canvas class="batch-heatmap" data-matrix='{{ item.heatmap_json|escapejs }}' style="width:100%; aspect-ratio:1/1; border-radius:16px; background:#120913;"></canvas>
                 </div>
                 <p class="muted" style="margin:10px 0 0;">
                     <strong>Resolution:</strong> {{ item.obj.analysis_meta.metadata.resolution|default:"Unknown" }}<br>

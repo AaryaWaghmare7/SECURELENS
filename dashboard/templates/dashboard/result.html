@@ -134,6 +134,10 @@
                     <td>Saved at</td>
                     <td>{{ obj.uploaded_at|date:"M d, Y H:i" }}</td>
                 </tr>
+                <tr>
+                    <td>Capture source</td>
+                    <td>{{ analysis_meta.capture_source|default:"upload" }}</td>
+                </tr>
             </table>
         </div>
         <div class="button-row">
