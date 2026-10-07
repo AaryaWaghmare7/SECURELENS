@@ -1,0 +1,16 @@
+# Optional dependencies for the preserved Django application and research scripts.
+dj-database-url
+django
+gunicorn
+matplotlib
+numpy
+opencv-python-headless
+pillow
+psycopg[binary]
+reportlab
+tensorflow
+torch
+torchvision
+transformers
+whitenoise
+pandas

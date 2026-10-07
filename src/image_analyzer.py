@@ -1,9 +1,14 @@
 import cv2
 import numpy as np
 import os
-import sys
-from PIL import Image, ImageChops, ImageEnhance
-import io
+from PIL import Image
+
+if __package__:
+    from .ela import perform_ela
+    from .fft import perform_fft
+else:
+    from ela import perform_ela
+    from fft import perform_fft
 
 # ─────────────────────────────────────────────────
 # PATH FIX — works regardless of where you run from
@@ -18,15 +23,9 @@ DATA_DIR = os.path.join(BASE_DIR, "..", "data")
 # ─────────────────────────────────────────────────
 def compute_ela(image_path, quality=90):
     try:
-        original = Image.open(image_path).convert("RGB")
-        buffer = io.BytesIO()
-        original.save(buffer, format="JPEG", quality=quality)
-        buffer.seek(0)
-        compressed = Image.open(buffer).convert("RGB")
-        ela = ImageChops.difference(original, compressed)
-        ela = ImageEnhance.Brightness(ela).enhance(20)
-        ela_arr = np.array(ela)
-        return np.mean(ela_arr), np.std(ela_arr)
+        with Image.open(image_path) as original:
+            result = perform_ela(original, quality=quality, gain=20)
+        return result["mean"], result["std"]
     except:
         return 0, 0
 
@@ -36,9 +35,8 @@ def compute_ela(image_path, quality=90):
 # ─────────────────────────────────────────────────
 def compute_fft(gray):
     try:
-        fft = np.fft.fftshift(np.fft.fft2(gray))
-        magnitude = 20 * np.log(np.abs(fft) + 1)
-        return np.mean(magnitude), np.std(magnitude)
+        result = perform_fft(gray)
+        return result["mean"], result["std"]
     except:
         return 0, 0
 
@@ -181,58 +179,40 @@ def score_image(f):
 # ─────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────
-print("\n" + "=" * 50)
-print("   🔍 SecureLens — Image Forensics Engine")
-print("=" * 50)
+def main():
+    print("\n" + "=" * 50)
+    print("   🔍 SecureLens — Image Forensics Engine")
+    print("=" * 50)
+    if not os.path.exists(DATA_DIR):
+        print(f"\n❌ 'data' folder not found at: {DATA_DIR}")
+        return
+    image_files = [f for f in os.listdir(DATA_DIR)
+                   if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+    if not image_files:
+        print(f"\n❌ No images found in: {DATA_DIR}")
+        return
+    print(f"\n📁 Found {len(image_files)} image(s) in: {DATA_DIR}\n")
+    for file in sorted(image_files):
+        features = analyze_image(os.path.join(DATA_DIR, file))
+        if features is None:
+            print(f"⛔ Skipped: {file}\n")
+            continue
+        label, confidence, reasons = score_image(features)
+        print(f"📸 {file}")
+        for title, key in [("Mean Pixel", "mean"), ("Std Deviation", "std"),
+                           ("Edge Density", "edge_density"), ("Noise", "noise"),
+                           ("ELA Mean", "ela_mean"), ("FFT Mean", "fft_mean"),
+                           ("Texture", "texture_mean"), ("RGB Balance", "channel_balance")]:
+            print(f"   {title:14}: {features[key]:.4f}")
+        print(f"   EXIF          : {features['exif']}")
+        print(f"   Legacy heuristic label: {label} | Heuristic points: {confidence}/100 (not calibrated confidence)")
+        for reason in reasons:
+            print(f"      • {reason}")
+        print()
+    print("=" * 50)
+    print("✅ SecureLens scan complete.")
+    print("=" * 50)
 
-# Check data folder exists
-if not os.path.exists(DATA_DIR):
-    print(f"\n❌ 'data' folder not found at: {DATA_DIR}")
-    print("👉 Create a folder named 'data' and put your images in it.")
-    sys.exit()
 
-# Get valid image files
-all_files = os.listdir(DATA_DIR)
-image_files = [f for f in all_files if f.lower().endswith((".jpg", ".jpeg", ".png"))]
-
-if not image_files:
-    print(f"\n❌ No images found in: {DATA_DIR}")
-    print("👉 Add .jpg or .png images to the data folder.")
-    sys.exit()
-
-print(f"\n📁 Found {len(image_files)} image(s) in: {DATA_DIR}\n")
-
-# Process each image
-for file in sorted(image_files):
-    path = os.path.join(DATA_DIR, file)
-    features = analyze_image(path)
-
-    if features is None:
-        print(f"⛔ Skipped: {file}\n")
-        continue
-
-    label, confidence, reasons = score_image(features)
-    icon = "🤖" if label == "AI Generated" else "✅"
-
-    print(f"📸 {file}")
-    print(f"   Mean Pixel    : {features['mean']:.2f}")
-    print(f"   Std Deviation : {features['std']:.2f}")
-    print(f"   Edge Density  : {features['edge_density']:.4f}")
-    print(f"   Noise         : {features['noise']:.2f}")
-    print(f"   ELA Mean      : {features['ela_mean']:.2f}")
-    print(f"   FFT Mean      : {features['fft_mean']:.2f}")
-    print(f"   Texture       : {features['texture_mean']:.2f}")
-    print(f"   RGB Balance   : {features['channel_balance']:.2f}")
-    print(f"   EXIF          : {features['exif']}")
-    print(f"   {'─'*35}")
-    print(f"   {icon} {label}  |  Confidence: {confidence}%")
-
-    if reasons:
-        print(f"   📋 Reasons:")
-        for r in reasons:
-            print(f"      • {r}")
-    print()
-
-print("=" * 50)
-print("✅ SecureLens scan complete.")
-print("=" * 50)
+if __name__ == "__main__":
+    main()

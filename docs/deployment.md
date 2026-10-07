@@ -1,0 +1,244 @@
+# SecureLens Deployment Guide
+
+Preparation only: no public service has been created or tested. All hostnames
+below are examples; use the real addresses assigned to your accounts. Do not
+publish until local tests pass and the pre-launch checklist is reviewed.
+
+## Recommended Hosting Layout
+
+```text
+Browser -> Vercel React frontend
+           /api reverse proxy -> Render FastAPI -> managed PostgreSQL
+                                            -> private persistent storage
+                                            -> preserved src/ analysis engine
+```
+
+The Vercel API proxy keeps the browser's session cookie first-party. Merely
+allowing CORS does not make a SameSite=Lax cookie work between unrelated
+`vercel.app` and `onrender.com` sites. SameSite=None requires Secure and can
+still be blocked by browsers. Prefer the proxy or same-site custom domains.
+See [Vercel rewrites](https://vercel.com/docs/routing/rewrites) and
+[MDN third-party cookies](https://developer.mozilla.org/en-US/docs/Web/Privacy/Guides/Third-party_cookies).
+
+The frontend always reads `VITE_API_BASE_URL`; no Render hostname is embedded
+in a component. With `VITE_API_PROXY=true`, browser calls use relative `/api`
+paths and `frontend/vercel.mjs` builds an external rewrite to that origin.
+The SPA fallback excludes `/api` and `/assets`, so an API failure is not
+silently turned into an HTML page.
+
+## 1. Review Git Before Publishing
+
+From the root:
+
+```bash
+git status --short
+git diff --stat
+git ls-files --others --exclude-standard
+python3 tools/check_git_safety.py
+```
+
+Review the full changes before staging or committing. `.env`, local database
+files, uploads, datasets, model weights, dependencies and generated builds must
+remain ignored. The read-only scanner checks common patterns and large files,
+not every possible secret or historical commit. Deleting a file in a later
+commit does not remove it from earlier commits. Review old history before
+public sharing and rotate any exposed secret; do not force-push or rewrite
+history as part of this upgrade.
+
+The missing legacy `dashboard/templates/dashboard/result.html` was already
+deleted before this request. It was not deleted by this upgrade. Review that
+separately if you still need the legacy Django result page.
+
+When you explicitly authorize publishing, stage only the reviewed files, use a
+normal commit and a normal push. Publishing source code is not a public deployment.
+
+## 2. Production PostgreSQL
+
+Choose Render PostgreSQL in the same region as the API, or Supabase PostgreSQL.
+Create a fresh production database; the local database is not silently uploaded.
+Use backups and a plan appropriate for retained account/report data.
+
+On Render, use the internal connection string for a Render database. The API
+normalizes `postgres://` or `postgresql://` to `postgresql+psycopg://` while
+preserving connection options. Never put this URL into frontend variables.
+
+For Supabase, use the dashboard-provided direct or **session-mode** pooler URL
+appropriate for your network and add `sslmode=require`. Avoid transaction-mode
+pooling unless psycopg prepared-statement behavior is configured and tested.
+Percent-encode special characters in credentials; do not print the URL in logs.
+The supplied Blueprint assumes Render PostgreSQL; configure an external
+database manually if choosing Supabase.
+See [Supabase connection guidance](https://supabase.com/docs/guides/database/connecting-to-postgres)
+for direct/session pooler options and SSL settings.
+
+## 3. Render FastAPI Settings
+
+Use a new Web Service, not the old Django service configuration.
+
+| Setting | Exact value |
+| --- | --- |
+| Runtime | Python 3 |
+| Root Directory | Leave empty (repository root; shared `src/` is required) |
+| Build Command | `pip install -r backend/requirements.txt` |
+| Pre-Deploy Command | `cd backend && python -m alembic upgrade head` |
+| Start Command | `cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --no-access-log` |
+| Health Check | `/api/health` |
+| Python | `PYTHON_VERSION=3.14.3` |
+| Storage disk mount | `/var/data/securelens` |
+
+Alternatively, choose `render.fastapi.yaml` as the Blueprint file. It describes
+a Starter API, a Basic PostgreSQL database and a 1 GB disk in Frankfurt.
+**These are paid resources; do not create them until you approve the cost.**
+No resources have been provisioned. Automatic Git-triggered deploys are off
+in this template. The old `render.yaml` and `build.sh` remain the Django setup.
+
+Render's [FastAPI guide](https://render.com/docs/deploy-fastapi) documents the
+Uvicorn binding. The [Blueprint reference](https://render.com/docs/blueprint-spec)
+documents migration and health-check settings. Use the paid pre-deploy command
+for migrations; the database must be reachable from the deploy environment.
+Migration imports do not initialize the runtime storage disk.
+
+### Required Render Environment
+
+```dotenv
+ENVIRONMENT=production
+PYTHON_VERSION=3.14.3
+DATABASE_URL=<private managed PostgreSQL connection URL>
+JWT_SECRET=<random secret, at least 32 characters>
+FRONTEND_ORIGINS=["https://your-securelens.vercel.app"]
+TRUSTED_HOSTS=["your-api.onrender.com","127.0.0.1","localhost"]
+COOKIE_SECURE=true
+COOKIE_SAMESITE=lax
+STORAGE_ROOT=/var/data/securelens
+IMAGE_RETENTION_DAYS=7
+STORAGE_CLEANUP_INTERVAL_SECONDS=3600
+SESSION_MINUTES=120
+AUTH_RATE_LIMIT=20
+```
+
+Generate the JWT secret using the provider's secret generator or a password
+manager. Do not paste real values into this document. `LOCAL_POSTGRES_PASSWORD`
+is only for the local helper and is not needed on Render. `$PORT` is provided
+by Render. Do not enable development reload in production.
+
+Set exact origins, without trailing slashes, paths or wildcards. Add a specific
+preview origin only when needed; never blanket-allow `*.vercel.app`. Hostnames
+in `TRUSTED_HOSTS` have no scheme/path. Add the frontend hostname if your chosen
+proxy preserves it as the request Host, then test the actual proxy behavior.
+Production startup rejects insecure cookies, SQLite, wildcard origins and a
+relative storage root.
+
+### Private Storage And Retention
+
+Local development uses `backend/.local/storage`. Production uses the attached
+private disk, never your laptop's path. Reports and optional downscaled previews
+must survive a restart/redeploy. The current `Storage` protocol exposes
+`write/read/delete`; implement a private S3, Supabase Storage or Cloudinary
+adapter later and inject it through the API and maintenance command. No cloud
+adapter is falsely claimed as connected.
+
+Render disks are available only to the owning runtime, not pre-deploy jobs or
+cron services. They require paid services and prevent multi-instance scaling
+and zero-downtime deployment. See [persistent disks](https://render.com/docs/disks).
+Do not run a separate cron service against a disk it cannot access.
+
+The API now removes expired previews at startup and periodically (hourly by
+default), plus on owner reads. Cleanup pauses while the service is stopped.
+Metrics and reports remain until deleted. Manual maintenance, in the **owning
+service's** shell:
+
+```bash
+cd backend
+python scripts/cleanup_storage.py
+```
+
+Verify retention settings and disk/database backups before accepting sensitive
+uploads. Render's free ephemeral filesystem is not sufficient for the current
+report storage adapter. Do not promise permanent retention on a free database.
+
+## 4. Test The Render API
+
+Open `https://your-api.onrender.com/api/health` and confirm `status: ok`.
+The endpoint also accurately reports `classifier_validated: false`.
+Run migrations before registration. Test login and private history through the
+frontend after its domain is allowlisted. Health alone does not verify uploads,
+cookie delivery, ownership or report persistence.
+
+## 5. Vercel Frontend Settings
+
+| Setting | Exact value |
+| --- | --- |
+| Root Directory | `frontend` |
+| Framework Preset | Vite |
+| Node.js | 24.x |
+| Install | Automatic lockfile detection, or `pnpm install --frozen-lockfile` |
+| Build | `npm run build` |
+| Output | `dist` |
+| Configuration | `frontend/vercel.mjs` |
+
+Add these **public** production build variables before deploying:
+
+```dotenv
+VITE_API_BASE_URL=https://your-api.onrender.com
+VITE_API_PROXY=true
+```
+
+Use the API **origin**, not `/api` or `/docs`. The dynamic configuration rejects
+insecure/local/credential-bearing destinations and fails on Vercel if the URL
+is missing. Do not put database passwords or signing secrets in any `VITE_`
+variable. `VITE_PROXY_TARGET` is only for the local Vite server.
+
+Vercel supports build-time [programmatic configuration](https://vercel.com/docs/project-configuration/vercel-ts),
+including `vercel.mjs`. Its SPA routing guidance is in
+[Vite on Vercel](https://vercel.com/docs/frameworks/frontend/vite).
+Public URLs, actual cookie/proxy behavior and upload/streaming limits still need
+production testing; local config tests do not replace it. Vercel documents a
+120-second external proxy timeout in its [limits](https://vercel.com/docs/limits).
+Large/slow batches may need durable queued jobs later. Do not deploy the local
+Vite server or portable PostgreSQL to the public internet.
+
+## Alternative: Direct API Or Custom Domain
+
+For direct calls between `vercel.app` and `onrender.com` set
+`VITE_API_PROXY=false`, keep `VITE_API_BASE_URL`, and use
+`COOKIE_SAMESITE=none` with `COOKIE_SECURE=true`. CSRF and exact Origin/CORS
+checks remain enabled. This mode depends on third-party cookie availability;
+the proxy is recommended for dependable public sign-in.
+
+Later you can use `www.securelens.example` on Vercel and
+`api.securelens.example` on Render. Add exact HTTPS origins and hostnames, update
+`VITE_API_BASE_URL`, redeploy the frontend and test DNS/TLS/session behavior.
+No custom domain is required now. Cookies stay host-only, not broadly scoped to
+the parent domain. Keep Lax for same-site HTTPS domains or continue using the proxy.
+
+## Deployment Order
+
+1. Review Git files, ignored data and old history, then explicitly authorize a normal commit/push.
+2. Create a production PostgreSQL database and backups.
+3. Create the Render API with private durable storage and production variables.
+4. Run Alembic migrations and test the API health response.
+5. Configure the Vercel frontend variables and build the React app.
+6. Allowlist its exact production origin/required hostnames in Render.
+7. Test the complete browser workflow, including proxy cookies and report downloads.
+8. Optionally connect custom domains and repeat security/workflow tests.
+
+## Public Launch Checklist
+
+- Registration, duplicate account handling, incorrect passwords, login and logout.
+- Session expiry, CSRF rejection, unknown Origin/Host rejection and owner-only history/reports/previews.
+- Single JPG/PNG upload, corrupt/disguised/oversized files and unsupported WEBP rejection.
+- Live camera permission on HTTPS, start/stop/navigation cleanup, no automatic image retention.
+- Batch progress, partial/all failures, report CSV/JSON, and side-by-side comparison.
+- JSON/PDF report downloads, history reopening/deletion and account preview preferences.
+- Data survives redeploy; preview expiration works without user visits; backups are restorable.
+- Mobile navigation, deep-link refresh, cookie preferences and privacy notice.
+- Proxy time/body limits and concurrent analyses tested with representative public workloads.
+- Trusted proxy/IP handling verified. The limiter is per API process and may see a proxy IP;
+  use a shared limiter/queue for scale and never blindly trust caller-supplied forwarding headers.
+- Add verified password recovery/email delivery, abuse monitoring and account deletion before
+  broad public signup. Self-host fonts if third-party font requests are unacceptable.
+- Validate a classifier on genuinely labeled held-out data before claiming detection accuracy.
+
+Do not call the website deployed until both actual public URLs and the above
+browser workflow have been exercised. This guide prepares that work; it does
+not assert that it has happened.

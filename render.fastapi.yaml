@@ -1,0 +1,49 @@
+# New FastAPI application only. render.yaml/build.sh remain the legacy Django setup.
+# This template provisions paid resources if you explicitly deploy it later.
+services:
+  - type: web
+    name: securelens-api
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r backend/requirements.txt
+    preDeployCommand: cd backend && python -m alembic upgrade head
+    startCommand: cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --no-access-log
+    healthCheckPath: /api/health
+    autoDeployTrigger: "off"
+    disk:
+      name: securelens-private-storage
+      mountPath: /var/data/securelens
+      sizeGB: 1
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      - key: DATABASE_URL
+        fromDatabase:
+          name: securelens-production-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_ORIGINS
+        sync: false
+      - key: TRUSTED_HOSTS
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: lax
+      - key: STORAGE_ROOT
+        value: /var/data/securelens
+      - key: IMAGE_RETENTION_DAYS
+        value: "7"
+      - key: STORAGE_CLEANUP_INTERVAL_SECONDS
+        value: "3600"
+      - key: AUTH_RATE_LIMIT
+        value: "20"
+databases:
+  - name: securelens-production-db
+    plan: basic-256mb
+    region: frankfurt
+    ipAllowList: []

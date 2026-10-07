@@ -1,13 +1,4 @@
-dj-database-url
-django
-gunicorn
-matplotlib
-numpy
-opencv-python
-pillow
-psycopg[binary]
-reportlab
-tensorflow
-torch
-transformers
-whitenoise
+streamlit==1.65.0
+numpy>=2.2,<3
+opencv-python-headless>=4.12,<5
+pillow>=11.3,<13

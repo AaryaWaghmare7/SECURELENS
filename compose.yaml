@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:17
+    env_file: backend/.env
+    environment:
+      POSTGRES_USER: securelens
+      POSTGRES_DB: securelens
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Set LOCAL_POSTGRES_PASSWORD with --env-file backend/.env}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - securelens-postgres:/var/lib/postgresql/data
+volumes:
+  securelens-postgres:
