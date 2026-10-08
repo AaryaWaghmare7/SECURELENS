@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth, useToast } from '../components/Providers';
-import { Skeleton } from '../components/UI';
+import { ErrorState, Skeleton } from '../components/UI';
 
 const routes = [
   ['Overview', '/dashboard', LayoutDashboard],
@@ -110,7 +110,7 @@ export function PublicLayout() {
   );
 }
 export function WorkspaceLayout() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, sessionError, retrySession } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const toast = useToast();
@@ -119,6 +119,15 @@ export function WorkspaceLayout() {
     return (
       <div className="workspace-loading">
         <Skeleton />
+      </div>
+    );
+  if (!user && sessionError)
+    return (
+      <div className="workspace-loading">
+        <ErrorState message={sessionError} />
+        <button className="button button-secondary" onClick={retrySession}>
+          Retry session check
+        </button>
       </div>
     );
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;

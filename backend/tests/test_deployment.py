@@ -1,13 +1,17 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import secrets
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import OperationalError
 
 from app.config import Settings
 from app.models import User, Analysis
 from app.services.maintenance import cleanup_once
+from app.database.session import Base
 from test_workspace import analyze
 
 
@@ -63,6 +67,35 @@ def test_trusted_host_and_api_security_headers(client):
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
+def test_database_health_failure_is_unavailable_not_false_success(client, monkeypatch):
+    def unavailable():
+        raise OperationalError("SELECT 1", {}, Exception("private database details"))
+    monkeypatch.setattr(client.app.state.engine, "connect", unavailable)
+    response = client.get("/api/health")
+    assert response.status_code == 503
+    assert response.json()["status"] == "unavailable"
+    assert response.headers["Retry-After"] == "5"
+    assert "private" not in response.text
+
+
+def test_migrations_build_all_required_tables_and_are_idempotent(client, monkeypatch):
+    from alembic import command
+    from alembic.config import Config
+    engine = client.app.state.engine
+    # This fixture owns a disposable database, never the application database.
+    assert engine.url.database.endswith("test.db") or engine.url.database.startswith("securelens_test_")
+    Base.metadata.drop_all(engine)
+    monkeypatch.setenv("DATABASE_URL", engine.url.render_as_string(hide_password=False))
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    command.upgrade(config, "head")
+    command.upgrade(config, "head")
+    inspector = inspect(engine)
+    assert {"users", "analyses", "user_preferences", "cookie_consents", "alembic_version"} <= set(inspector.get_table_names())
+    assert "updated_at" in {column["name"] for column in inspector.get_columns("users")}
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002_user_updated_at"
+
+
 def test_cookie_attributes_match_cross_site_logout(client):
     client.app.state.settings.cookie_secure = True
     client.app.state.settings.cookie_samesite = "none"
@@ -104,3 +137,20 @@ def test_background_cleanup_preserves_reports_and_metrics(client, signed_in):
         row = db.get(Analysis, record["id"])
         assert row.result["items"][0]["metrics"]["width"] == 64
         assert row.result["items"][0]["visualizations"] == {}
+
+
+def test_json_report_survives_ephemeral_storage_loss(client, signed_in):
+    record = analyze(client, signed_in, retain_images="true").json()
+    with client.app.state.session_factory() as db:
+        row = db.get(Analysis, record["id"])
+        keys = list(row.image_keys) + [row.report_key]
+    for key in keys:
+        client.app.state.storage.delete(key)
+    report = client.get(f'/api/reports/{record["id"]}')
+    assert report.status_code == 200
+    assert report.json()["id"] == record["id"]
+    assert report.json()["result"]["items"][0]["metrics"]["width"] == 64
+    assert "visualizations" not in report.json()["result"]["items"][0]
+    assert client.get(f'/api/reports/{record["id"]}?format=pdf').content.startswith(b"%PDF")
+    assert client.get(f'/api/reports/{record["id"]}?format=csv').status_code == 200
+    assert client.get(f'/api/history/{record["id"]}/images/0/original').status_code == 404

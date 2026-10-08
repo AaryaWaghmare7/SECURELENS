@@ -1,8 +1,58 @@
 # SecureLens Deployment Guide
 
-Preparation only: no public service has been created or tested. All hostnames
-below are examples; use the real addresses assigned to your accounts. Do not
-publish until local tests pass and the pre-launch checklist is reviewed.
+## Current Production
+
+- Frontend: https://securelens-ten.vercel.app
+- API: https://securelens-api-fo41.onrender.com/api/health
+- Browser requests use relative `/api/...`; Vercel rewrites them to Render.
+- Vercel Production: `VITE_API_PROXY=true` and
+  `VITE_API_BASE_URL=https://securelens-api-fo41.onrender.com`.
+- Render: `ENVIRONMENT=production`, `COOKIE_SECURE=true`,
+  `COOKIE_SAMESITE=none`, `STORAGE_ROOT=/tmp/securelens`,
+  `FRONTEND_ORIGINS=["https://securelens-ten.vercel.app"]`,
+  `TRUSTED_HOSTS=["securelens-api-fo41.onrender.com"]`.
+- Preserve the existing private `DATABASE_URL` and `JWT_SECRET` unchanged.
+- The current service uses Root Directory `backend`, build
+  `pip install -r requirements.txt`, and start
+  `python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+  The repository-level `src/` engine must remain available. Do not replace this
+  service with the paid Blueprint below without reviewing its cost and settings.
+
+### Reliability And Free Hosting
+
+The frontend shares one readiness check across concurrent requests. It polls
+unauthenticated `/api/health` for up to 90 seconds, with 12-second attempts and
+2/3/5/8/10-second backoff, then continues automatically. Successful readiness
+is cached for 10 seconds; there is no background keep-alive. A real loading
+notice appears during a slow wake. Only network/timeouts and 502/503/504 health
+responses are retried. Other HTTP failures retain their own error categories.
+
+No submitted mutation (signup, login, upload, batch, compare, settings or logout)
+is replayed automatically. An interrupted POST may already have succeeded;
+check the account/history before manually submitting again. A failed safe GET
+can retry once after a fresh readiness check. Temporary session-check errors
+do not silently log the user out.
+
+Health executes `SELECT 1`, returns 503 if the database is unavailable, and uses
+bounded PostgreSQL connection/pool waits. Alembic upgrades run before Uvicorn
+starts; no database recreation is required.
+
+Render Free spins down after inactivity and can take about a minute to start.
+Software can handle the wait, not guarantee an instant cold start. An always-on
+paid Render instance removes idle spin-down. Vercel external rewrites have a
+120-second proxy timeout; very large batches still need a durable job queue.
+See [Render Free](https://render.com/docs/free) and
+[Vercel limits](https://vercel.com/docs/limits).
+
+Account, preferences, consent, analysis metrics and report contents live in
+PostgreSQL. JSON/CSV/PDF downloads are generated from the owned database record,
+so loss of temporary files does not break report downloads. Optional image
+previews remain ephemeral: `/tmp` can disappear on sleep/redeploy, earlier than
+the configured retention limit. Durable previews require private cloud storage
+or an approved paid disk. Do not promise permanent storage on the free database.
+
+The sections below describe provisioning alternatives and hardening, not
+additional services that have already been provisioned.
 
 ## Recommended Hosting Layout
 
@@ -86,15 +136,15 @@ Use a new Web Service, not the old Django service configuration.
 | Python | `PYTHON_VERSION=3.14.3` |
 | Storage disk mount | `/var/data/securelens` |
 
-If your existing service has Root Directory set to `backend`, clear that field
-and use the commands above. Render excludes files outside the configured root;
-the analysis adapter imports the preserved repository-level `src/` package.
+For a new service, the repository-root layout above makes the shared `src/`
+dependency explicit. Do not change the current working service's root just to
+match this alternative. The analysis adapter imports repository-level `src/`.
 See [Render monorepo roots](https://render.com/docs/monorepo-support).
 
 Alternatively, choose `render.fastapi.yaml` as the Blueprint file. It describes
 a Starter API, a Basic PostgreSQL database and a 1 GB disk in Frankfurt.
 **These are paid resources; do not create them until you approve the cost.**
-No resources have been provisioned. Automatic Git-triggered deploys are off
+This Blueprint has not been provisioned. Automatic Git-triggered deploys are off
 in this template. The old `render.yaml` and `build.sh` remain the Django setup.
 
 Render's [FastAPI guide](https://render.com/docs/deploy-fastapi) documents the
@@ -169,12 +219,11 @@ cookies remain HttpOnly, host-only and CSRF-protected. Browsers may still block
 third-party cookies; the recommended Vercel proxy uses `COOKIE_SAMESITE=lax`
 instead. These are two supported modes, not interchangeable CORS fixes.
 
-If no persistent disk is attached yet, `STORAGE_ROOT=/tmp/securelens` is writable
-for an initial health-check-only boot. It is **ephemeral**: reports and retained
-previews can disappear on redeploy/restart. PostgreSQL account/history records
-remain in PostgreSQL, but file-backed reports will be missing. Do not accept
-durable user uploads with this temporary setting; attach a private disk at
-`/var/data/securelens` and switch `STORAGE_ROOT` before public use.
+The current free service uses writable `STORAGE_ROOT=/tmp/securelens`.
+It is **ephemeral**: retained previews and redundant local report copies can
+disappear on redeploy/restart/sleep. Report downloads are rebuilt from PostgreSQL
+and remain available while their owned record exists. Use private cloud storage
+or an approved paid disk before promising durable image previews.
 
 ### Private Storage And Retention
 
@@ -201,8 +250,8 @@ python scripts/cleanup_storage.py
 ```
 
 Verify retention settings and disk/database backups before accepting sensitive
-uploads. Render's free ephemeral filesystem is not sufficient for the current
-report storage adapter. Do not promise permanent retention on a free database.
+uploads. Render's free ephemeral filesystem is not sufficient for durable
+previews. Do not promise permanent retention on a free database.
 
 ## 4. Test The Render API
 
@@ -297,6 +346,5 @@ the parent domain. Keep Lax for same-site HTTPS domains or continue using the pr
   broad public signup. Self-host fonts if third-party font requests are unacceptable.
 - Validate a classifier on genuinely labeled held-out data before claiming detection accuracy.
 
-Do not call the website deployed until both actual public URLs and the above
-browser workflow have been exercised. This guide prepares that work; it does
-not assert that it has happened.
+Use the complete checklist for each release; successful health alone is not
+proof that authentication, uploads and reports work.

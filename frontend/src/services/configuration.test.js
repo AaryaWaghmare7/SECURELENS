@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { resolveApiBase } from './configuration';
 import { createVercelConfig } from '../../deployment/config.mjs';
+import { publicRouterBase } from '../../deployment/public-bundle.mjs';
 
 test('local and Vercel proxy requests stay same-origin', () => {
   expect(resolveApiBase({})).toBe('');
@@ -37,4 +38,30 @@ test('Vercel deployment fails clearly instead of silently targeting localhost', 
   ]) {
     expect(() => createVercelConfig({ VITE_API_BASE_URL: origin })).toThrow('public HTTPS origin');
   }
+});
+
+test('the actual production configuration uses only the first-party API proxy', () => {
+  const env = {
+    VERCEL: '1',
+    VERCEL_ENV: 'production',
+    VITE_API_PROXY: 'true',
+    VITE_API_BASE_URL: 'https://securelens-api-fo41.onrender.com',
+  };
+  expect(resolveApiBase(env)).toBe('');
+  expect(createVercelConfig(env).rewrites[0].destination).toBe(
+    'https://securelens-api-fo41.onrender.com/api/:path*',
+  );
+  expect(() => createVercelConfig({ ...env, VITE_API_PROXY: 'false' })).toThrow(
+    'first-party sessions',
+  );
+});
+
+test('production removes only the router dummy local URL, not application routing logic', () => {
+  const plugin = publicRouterBase();
+  expect(plugin.apply).toBe('build');
+  const source = 'const base = "http://localhost"; base = window.location.origin;';
+  expect(
+    plugin.transform(source, '/node_modules/react-router/dist/development/index.mjs').code,
+  ).toBe('const base = "https://router.invalid"; base = window.location.origin;');
+  expect(plugin.transform(source, '/src/local-development.js')).toBeNull();
 });

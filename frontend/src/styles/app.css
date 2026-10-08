@@ -78,6 +78,15 @@ em {
 svg {
   flex-shrink: 0;
 }
+.backend-status {
+  position: fixed;
+  z-index: 110;
+  top: 90px;
+  right: 16px;
+  width: min(440px, calc(100% - 32px));
+  box-shadow: 0 12px 40px #4a354020;
+  background: #fff7fa;
+}
 .eyebrow {
   font-size: 10px;
   font-weight: 700;

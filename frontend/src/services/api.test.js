@@ -1,5 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { api, exportReport, reportCsv, setCsrfToken, streamBatch } from './api';
+vi.mock('./readiness', () => ({
+  ensureBackendReady: vi.fn().mockResolvedValue(),
+  invalidateBackendReady: vi.fn(),
+}));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -32,7 +36,7 @@ test('network failures explain connectivity and possible CORS without retrying s
   expect(fetch).toHaveBeenCalledOnce();
 });
 
-test('a slow response times out with a wake-up hint and does not retry a POST', async () => {
+test('a submitted POST times out without implying it was not processed or retrying it', async () => {
   vi.useFakeTimers();
   const fetch = vi.fn().mockImplementation(
     (_, { signal }) =>
@@ -41,7 +45,7 @@ test('a slow response times out with a wake-up hint and does not retry a POST', 
       }),
   );
   vi.stubGlobal('fetch', fetch);
-  const failure = expect(api.register({})).rejects.toThrow('server may be waking up');
+  const failure = expect(api.register({})).rejects.toThrow('request was not retried');
   await vi.advanceTimersByTimeAsync(90_000);
   await failure;
   expect(fetch).toHaveBeenCalledOnce();
@@ -93,10 +97,10 @@ test('validation arrays do not expose request values', async () => {
 });
 
 test.each([502, 503, 504])(
-  'gateway HTTP %i explains temporary server unavailability',
+  'gateway HTTP %i remains distinguishable from an internal server error',
   async (status) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status }));
-    await expect(api.register({})).rejects.toThrow('temporarily unavailable or waking up');
+    await expect(api.register({})).rejects.toMatchObject({ status, retryable: true });
   },
 );
 

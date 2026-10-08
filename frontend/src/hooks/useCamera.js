@@ -70,7 +70,7 @@ export function useCamera() {
   async function start() {
     if (active.current) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Camera access needs localhost or HTTPS and a supported browser.');
+      setError('Camera access needs a secure browser context and a supported browser.');
       return;
     }
     const run = ++generation.current;

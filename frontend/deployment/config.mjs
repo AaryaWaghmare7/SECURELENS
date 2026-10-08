@@ -1,5 +1,7 @@
 export function createVercelConfig(env) {
   const proxy = env.VITE_API_PROXY === 'true';
+  if (env.VERCEL_ENV === 'production' && !proxy)
+    throw new Error('Production SecureLens requires VITE_API_PROXY=true for first-party sessions.');
   const value = env.VITE_API_BASE_URL || '';
   let origin;
   if (value) {

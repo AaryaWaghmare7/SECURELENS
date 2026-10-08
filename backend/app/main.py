@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from .config import Settings
 from .database.session import make_database
@@ -83,8 +84,13 @@ def create_app(settings=None):
 
     @app.get("/api/health")
     def health():
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        except SQLAlchemyError as error:
+            logging.getLogger(__name__).warning("Database health check failed (%s).", type(error).__name__)
+            return JSONResponse({"status": "unavailable", "detail": "Database is temporarily unavailable."},
+                                status_code=503, headers={"Retry-After": "5"})
         return {"status": "ok", "engine": "forensic-heuristics", "classifier_validated": False,
                 "image_retention_days": settings.image_retention_days}
 

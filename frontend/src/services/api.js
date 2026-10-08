@@ -1,73 +1,35 @@
-import { resolveApiBase } from './configuration';
+import { API_BASE, diagnose, fetchResponse } from './transport';
+import { ensureBackendReady, invalidateBackendReady } from './readiness';
 
-export const API_BASE = resolveApiBase(import.meta.env);
-const RESPONSE_TIMEOUT_MS = 90_000;
+export { API_BASE };
 let csrfToken = '';
 export function setCsrfToken(token) {
   csrfToken = token || '';
 }
 
 async function fetchApi(path, options = {}) {
+  await ensureBackendReady({ signal: options.signal });
+  options.signal?.throwIfAborted();
   const headers = { ...options.headers };
   if (options.body && !(options.body instanceof FormData))
     headers['Content-Type'] = 'application/json';
   if (options.method && !['GET', 'HEAD'].includes(options.method))
     headers['X-CSRF-Token'] = csrfToken;
-  const timeout = new AbortController();
-  const signal = options.signal
-    ? AbortSignal.any([options.signal, timeout.signal])
-    : timeout.signal;
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    timeout.abort();
-  }, RESPONSE_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/api${path}`, {
-      credentials: 'include',
-      ...options,
-      headers,
-      signal,
-    });
-  } catch (error) {
-    if (options.signal?.aborted) throw error;
-    if (timedOut)
-      throw new Error(
-        'SecureLens is taking too long to respond. The server may be waking up; wait a minute and try again.',
-      );
-    if (error instanceof TypeError)
-      throw new Error(
-        'Could not connect to SecureLens. Check your connection and try again. If this persists, the API may be unavailable or the browser may be blocking the request (CORS).',
-      );
-    throw error;
-  } finally {
-    // Bound the wait for headers, not the lifetime of a batch response stream.
-    clearTimeout(timer);
-  }
-  if (!response.ok) {
-    if (response.status === 401 && !['/auth/login', '/auth/register'].includes(path)) {
-      window.dispatchEvent(new Event('securelens:session-expired'));
-    }
-    if ([502, 503, 504].includes(response.status))
-      throw new Error(
-        'The SecureLens server is temporarily unavailable or waking up. Wait a minute and try again.',
-      );
-    if (response.status >= 500)
-      throw new Error('SecureLens could not complete this request. Please try again later.');
-    let message = 'The request could not finish. Please try again.';
+  const method = options.method || 'GET';
+  for (let attempt = 0; ; attempt++) {
     try {
-      const error = await response.json();
-      message =
-        typeof error.detail === 'string'
-          ? error.detail
-          : 'Please check the information or image you provided.';
-    } catch {
-      /* Non-JSON proxy failure. */
+      return await fetchResponse(path, { ...options, headers });
+    } catch (error) {
+      diagnose(path, method, error);
+      if (error.status === 401 && !['/auth/login', '/auth/register', '/auth/me'].includes(path))
+        window.dispatchEvent(new Event('securelens:session-expired'));
+      if (error.retryable) invalidateBackendReady();
+      if (method !== 'GET' || attempt > 0 || !error.retryable || options.signal?.aborted)
+        throw error;
+      // Only safe reads can recover automatically after their response failed.
+      await ensureBackendReady({ signal: options.signal, force: true });
     }
-    throw new Error(message);
   }
-  return response;
 }
 
 export async function request(path, options) {

@@ -1,4 +1,5 @@
 import csv
+import json
 from io import StringIO, BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
@@ -87,7 +88,8 @@ def report(identifier: str, request: Request, format: str = Query("json", patter
     row = owned_record(db, user, identifier)
     headers = {"Content-Disposition": f'attachment; filename="securelens-{row.id}.{format}"', "Cache-Control": "no-store"}
     if format == "json":
-        return Response(request.app.state.storage.read(row.report_key), media_type="application/json", headers=headers)
+        # PostgreSQL is durable; Render Free's local report files are not.
+        return Response(json.dumps(report_payload(row), allow_nan=False), media_type="application/json", headers=headers)
     if format == "csv":
         buffer = StringIO()
         writer = csv.writer(buffer)

@@ -9,7 +9,8 @@ class Base(DeclarativeBase):
 
 def make_database(url):
     engine = create_engine(url, pool_pre_ping=True, hide_parameters=True,
-                           connect_args={"check_same_thread": False} if url.startswith("sqlite") else {})
+                           connect_args={"check_same_thread": False} if url.startswith("sqlite") else {"connect_timeout": 5},
+                           **({} if url.startswith("sqlite") else {"pool_timeout": 5}))
     if url.startswith("sqlite"):
         @event.listens_for(engine, "connect")
         def enable_foreign_keys(connection, _):

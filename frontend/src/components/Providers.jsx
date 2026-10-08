@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { api, setCsrfToken } from '../services/api';
+import BackendStatus from './BackendStatus';
 
 const AuthContext = createContext(null);
 const ToastContext = createContext(null);
@@ -11,32 +12,47 @@ export function Providers({ children }) {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [retainImages, setRetainImages] = useState(false);
+  const [sessionError, setSessionError] = useState('');
+  const [sessionAttempt, setSessionAttempt] = useState(0);
+  const generation = useRef(0);
   useEffect(() => {
     function expire() {
+      generation.current++;
       setCsrfToken('');
       setUser(null);
+      setLoading(false);
     }
     window.addEventListener('securelens:session-expired', expire);
     return () => window.removeEventListener('securelens:session-expired', expire);
   }, []);
   useEffect(() => {
     let live = true;
+    const started = generation.current;
+    setLoading(true);
+    setSessionError('');
     api
       .me()
       .then((data) => {
-        if (live) {
+        if (live && generation.current === started) {
           setCsrfToken(data.csrf_token);
           setUser(data.user);
         }
       })
-      .catch(() => {})
+      .catch((error) => {
+        if (live && generation.current === started) {
+          if (error.status === 401) {
+            setCsrfToken('');
+            setUser(null);
+          } else setSessionError(error.message);
+        }
+      })
       .finally(() => {
-        if (live) setLoading(false);
+        if (live && generation.current === started) setLoading(false);
       });
     return () => {
       live = false;
     };
-  }, []);
+  }, [sessionAttempt]);
   useEffect(() => {
     if (!toast) return;
     const timeout = setTimeout(() => setToast(null), 5000);
@@ -57,11 +73,15 @@ export function Providers({ children }) {
     };
   }, [user?.id]);
   function accept(data) {
+    generation.current++;
     setCsrfToken(data.csrf_token);
     setUser(data.user);
+    setLoading(false);
+    setSessionError('');
   }
   async function logout() {
     await api.logout();
+    generation.current++;
     setCsrfToken('');
     setUser(null);
   }
@@ -70,6 +90,8 @@ export function Providers({ children }) {
       value={{
         user,
         loading,
+        sessionError,
+        retrySession: () => setSessionAttempt((value) => value + 1),
         accept,
         logout,
         retainImages,
@@ -79,6 +101,7 @@ export function Providers({ children }) {
     >
       <ToastContext.Provider value={(message, error = false) => setToast({ message, error })}>
         {children}
+        <BackendStatus retry={() => setSessionAttempt((value) => value + 1)} />
         {toast && (
           <div className={`toast ${toast.error ? 'toast-error' : ''}`} role="status">
             {toast.error ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
