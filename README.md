@@ -172,10 +172,10 @@ there. See the [deployment guide](docs/deployment.md) before setting up hosts.
 | `DATABASE_URL` | PostgreSQL SQLAlchemy psycopg connection string |
 | `JWT_SECRET` | Random signing secret, at least 32 characters |
 | `LOCAL_POSTGRES_PASSWORD` | Local portable/Docker database password only |
-| `FRONTEND_ORIGINS` | JSON list of exact allowed browser origins |
+| `FRONTEND_ORIGINS` | JSON array or comma-separated exact origins; `[]` for backend-first production deployment |
 | `COOKIE_SECURE` | False on local HTTP; true with production HTTPS |
 | `COOKIE_SAMESITE` | `lax` recommended with proxy/same-site hosts; `none` requires Secure |
-| `TRUSTED_HOSTS` | JSON list of exact API/proxy request hostnames |
+| `TRUSTED_HOSTS` | Non-empty JSON array or comma-separated exact API/proxy hostnames; no schemes, paths or wildcards |
 | `SESSION_MINUTES` | Cookie/JWT lifetime, default 120 minutes |
 | `STORAGE_ROOT` | Private local storage, default backend/.local/storage |
 | `IMAGE_RETENTION_DAYS` | Preview lifetime, default 7 days |

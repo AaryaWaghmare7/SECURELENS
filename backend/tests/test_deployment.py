@@ -23,7 +23,7 @@ def test_managed_postgres_urls_select_the_installed_driver():
         assert value.database_url.endswith("?sslmode=require")
 
 
-@pytest.mark.parametrize("origins", [["*"], ["https://*.vercel.app"], ["https://web.example/path"], [],
+@pytest.mark.parametrize("origins", [["*"], ["https://*.vercel.app"], ["https://web.example/path"],
                                      ["https://user:password@web.example"], ["https://web.example/"]])
 def test_cors_rejects_wildcards_and_non_origins(origins):
     with pytest.raises(ValidationError):

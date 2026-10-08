@@ -27,7 +27,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: FRONTEND_ORIGINS
-        sync: false
+        value: "[]"
       - key: TRUSTED_HOSTS
         sync: false
       - key: COOKIE_SECURE

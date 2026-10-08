@@ -86,6 +86,11 @@ Use a new Web Service, not the old Django service configuration.
 | Python | `PYTHON_VERSION=3.14.3` |
 | Storage disk mount | `/var/data/securelens` |
 
+If your existing service has Root Directory set to `backend`, clear that field
+and use the commands above. Render excludes files outside the configured root;
+the analysis adapter imports the preserved repository-level `src/` package.
+See [Render monorepo roots](https://render.com/docs/monorepo-support).
+
 Alternatively, choose `render.fastapi.yaml` as the Blueprint file. It describes
 a Starter API, a Basic PostgreSQL database and a 1 GB disk in Frankfurt.
 **These are paid resources; do not create them until you approve the cost.**
@@ -105,8 +110,8 @@ ENVIRONMENT=production
 PYTHON_VERSION=3.14.3
 DATABASE_URL=<private managed PostgreSQL connection URL>
 JWT_SECRET=<random secret, at least 32 characters>
-FRONTEND_ORIGINS=["https://your-securelens.vercel.app"]
-TRUSTED_HOSTS=["your-api.onrender.com","127.0.0.1","localhost"]
+FRONTEND_ORIGINS=[]
+TRUSTED_HOSTS=["securelens-api.onrender.com"]
 COOKIE_SECURE=true
 COOKIE_SAMESITE=lax
 STORAGE_ROOT=/var/data/securelens
@@ -117,9 +122,32 @@ AUTH_RATE_LIMIT=20
 ```
 
 Generate the JWT secret using the provider's secret generator or a password
-manager. Do not paste real values into this document. `LOCAL_POSTGRES_PASSWORD`
+manager for a new service. For an existing service, preserve `DATABASE_URL` and
+`JWT_SECRET` unchanged. Do not paste real values into this document. `LOCAL_POSTGRES_PASSWORD`
 is only for the local helper and is not needed on Render. `$PORT` is provided
 by Render. Do not enable development reload in production.
+
+Use your service's actual public hostname in `TRUSTED_HOSTS`; the value above
+applies only if Render assigned `securelens-api.onrender.com`. If you configure a
+custom API domain, also allowlist it for Render's health checks. Host checking
+stays enabled. [Render health checks](https://render.com/docs/health-checks)
+use a verified custom domain or the service's `onrender.com` hostname.
+
+Deploy Render first with `FRONTEND_ORIGINS=[]`. An explicitly empty/blank list
+allows the API and unauthenticated `/api/health` to start, but does **not** allow
+browser cross-origin access. Omitting this variable in production also defaults
+to an empty list, not development origins. Explicitly configured local origins
+still fail production validation. After Vercel deployment, change only
+`FRONTEND_ORIGINS` to `["https://<actual-vercel-domain>"]` and redeploy the API
+(with the proxy/cookie mode already chosen). No placeholder origin is needed.
+
+Both list variables accept JSON arrays (recommended) or comma-separated strings,
+for example `TRUSTED_HOSTS=securelens-api.onrender.com,127.0.0.1`. Malformed JSON,
+non-string/empty entries, schemes or ports in hosts, and wildcards are rejected
+with field-specific errors. An empty `TRUSTED_HOSTS` is never accepted.
+This uses Pydantic Settings' field-scoped
+[NoDecode/custom validation](https://pydantic.dev/docs/validation/dev/concepts/pydantic_settings/#disabling-json-parsing),
+not a global parsing or security bypass.
 
 Set exact origins, without trailing slashes, paths or wildcards. Add a specific
 preview origin only when needed; never blanket-allow `*.vercel.app`. Hostnames
@@ -127,6 +155,26 @@ in `TRUSTED_HOSTS` have no scheme/path. Add the frontend hostname if your chosen
 proxy preserves it as the request Host, then test the actual proxy behavior.
 Production startup rejects insecure cookies, SQLite, wildcard origins and a
 relative storage root.
+
+Python remains at the already tested 3.14 series (`PYTHON_VERSION=3.14.3` in the
+Blueprint). The reported build succeeds and the backend regression suite runs
+on Python 3.14; this startup failure is configuration validation, not a Python
+compatibility error. No downgrade is needed for this fix. Render supports both
+`PYTHON_VERSION` and `.python-version`; see its
+[Python version guide](https://render.com/docs/python-version).
+
+For the existing direct Vercel-to-Render setup, use `COOKIE_SAMESITE=none` and
+`COOKIE_SECURE=true` from the start. `none` without Secure is rejected. Session
+cookies remain HttpOnly, host-only and CSRF-protected. Browsers may still block
+third-party cookies; the recommended Vercel proxy uses `COOKIE_SAMESITE=lax`
+instead. These are two supported modes, not interchangeable CORS fixes.
+
+If no persistent disk is attached yet, `STORAGE_ROOT=/tmp/securelens` is writable
+for an initial health-check-only boot. It is **ephemeral**: reports and retained
+previews can disappear on redeploy/restart. PostgreSQL account/history records
+remain in PostgreSQL, but file-backed reports will be missing. Do not accept
+durable user uploads with this temporary setting; attach a private disk at
+`/var/data/securelens` and switch `STORAGE_ROOT` before public use.
 
 ### Private Storage And Retention
 
@@ -160,9 +208,19 @@ report storage adapter. Do not promise permanent retention on a free database.
 
 Open `https://your-api.onrender.com/api/health` and confirm `status: ok`.
 The endpoint also accurately reports `classifier_validated: false`.
+It requires no authentication or frontend origin and executes `SELECT 1` against
+the configured database. An unreachable database correctly fails the health
+check; this is not hidden by returning a static success response.
 Run migrations before registration. Test login and private history through the
 frontend after its domain is allowlisted. Health alone does not verify uploads,
 cookie delivery, ownership or report persistence.
+
+For an existing production database, apply the committed Alembic migrations,
+never delete/recreate it. With the repository root setting above, the pre-deploy
+command is `cd backend && python -m alembic upgrade head`. If your shell is
+already inside `backend`, run `python -m alembic upgrade head`. The command is
+idempotent when the database is already at head. Changing only these settings
+does not require a new schema migration.
 
 ## 5. Vercel Frontend Settings
 
