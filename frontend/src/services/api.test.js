@@ -1,10 +1,139 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { api, exportReport, reportCsv, streamBatch } from './api';
+import { api, exportReport, reportCsv, setCsrfToken, streamBatch } from './api';
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  setCsrfToken('');
+});
+
+test('signup uses the registration endpoint, credentials and CSRF header', async () => {
+  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: {} }) });
+  vi.stubGlobal('fetch', fetch);
+  setCsrfToken('test-csrf');
+  const data = { name: 'Test User', email: 'test@example.com', password: 'test-password' };
+  await api.register(data);
+  expect(fetch).toHaveBeenCalledWith(
+    '/api/auth/register',
+    expect.objectContaining({
+      method: 'POST',
+      credentials: 'include',
+      body: JSON.stringify(data),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'test-csrf' },
+    }),
+  );
+});
+
+test('network failures explain connectivity and possible CORS without retrying signup', async () => {
+  const fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+  vi.stubGlobal('fetch', fetch);
+  await expect(api.register({})).rejects.toThrow('Could not connect to SecureLens');
+  expect(fetch).toHaveBeenCalledOnce();
+});
+
+test('a slow response times out with a wake-up hint and does not retry a POST', async () => {
+  vi.useFakeTimers();
+  const fetch = vi.fn().mockImplementation(
+    (_, { signal }) =>
+      new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
+  );
+  vi.stubGlobal('fetch', fetch);
+  const failure = expect(api.register({})).rejects.toThrow('server may be waking up');
+  await vi.advanceTimersByTimeAsync(90_000);
+  await failure;
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test('user cancellation remains an AbortError rather than a connectivity failure', async () => {
+  const controller = new AbortController();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(
+      (_, { signal }) =>
+        new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+    ),
+  );
+  const failure = expect(api.analyze(new FormData(), controller.signal)).rejects.toMatchObject({
+    name: 'AbortError',
+  });
+  controller.abort();
+  await failure;
+});
+
+test.each([400, 409])('HTTP %i preserves safe backend validation messages', async (status) => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+      json: async () => ({ detail: 'An account with this email already exists.' }),
+    }),
+  );
+  await expect(api.register({})).rejects.toThrow('An account with this email already exists.');
+});
+
+test('validation arrays do not expose request values', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: async () => ({ detail: [{ input: 'private-value', msg: 'Invalid input' }] }),
+    }),
+  );
+  await expect(api.register({})).rejects.toThrow(
+    'Please check the information or image you provided.',
+  );
+});
+
+test.each([502, 503, 504])(
+  'gateway HTTP %i explains temporary server unavailability',
+  async (status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status }));
+    await expect(api.register({})).rejects.toThrow('temporarily unavailable or waking up');
+  },
+);
+
+test('server errors never display internal exception details', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ detail: 'private database traceback' }),
+    }),
+  );
+  await expect(api.login({})).rejects.toThrow('SecureLens could not complete this request.');
+});
+
+test('response timers clear after headers without breaking cancellation of a batch stream', async () => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  let requestSignal;
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(stream) {
+      stream.enqueue(encoder.encode('data: {"record":{"id":"batch-test"}}\n\n'));
+      stream.close();
+    },
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (_, { signal }) => {
+      requestSignal = signal;
+      return { ok: true, body };
+    }),
+  );
+  await streamBatch([], { save: false, retain: false }, vi.fn(), controller.signal);
+  expect(vi.getTimerCount()).toBe(0);
+  controller.abort();
+  expect(requestSignal.aborted).toBe(true);
 });
 
 test('saved report downloads use authenticated API requests and the right file type', async () => {
