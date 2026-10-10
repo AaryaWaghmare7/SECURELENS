@@ -1,7 +1,7 @@
 import { ApiError, diagnose, fetchResponse } from './transport';
 
-const WINDOW_MS = 90_000;
-const ATTEMPT_MS = 12_000;
+const WINDOW_MS = 180_000;
+const ATTEMPT_MS = 65_000;
 const READY_TTL_MS = 10_000;
 const BACKOFF_MS = [2_000, 3_000, 5_000, 8_000, 10_000];
 const listeners = new Set();
@@ -40,6 +40,7 @@ async function poll() {
           {
             signal: controller.signal,
             cache: 'no-store',
+            headers: { Accept: 'application/json' },
           },
           ATTEMPT_MS,
         );
@@ -48,6 +49,14 @@ async function poll() {
           body = await response.json();
         } catch (error) {
           if (controller.signal.aborted) throw error;
+          // A sleeping host can serve its HTML gateway page before the API starts.
+          if (response.headers?.get('content-type')?.includes('text/html'))
+            throw new ApiError(
+              'The hosting gateway is waiting for the SecureLens server to start.',
+              'HEALTH_STARTING',
+              response.status,
+              true,
+            );
           throw new ApiError(
             'SecureLens returned an invalid health response. Please contact support.',
             'HEALTH_RESPONSE',
@@ -77,7 +86,7 @@ async function poll() {
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
     }
     throw new ApiError(
-      'SecureLens could not reach the analysis server. Please try again.',
+      'SecureLens could not reach the analysis server after three minutes. Please try again; your request has not been submitted.',
       'READINESS_TIMEOUT',
     );
   } catch (error) {
@@ -96,7 +105,16 @@ function waitForFlight(promise, signal) {
   return new Promise((resolve, reject) => {
     const abort = () => reject(signal.reason);
     signal.addEventListener('abort', abort, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', abort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      },
+    );
   });
 }
 

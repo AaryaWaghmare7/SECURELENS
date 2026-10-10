@@ -18,7 +18,7 @@ export default function BackendStatus({ retry }) {
         <strong>{waking ? 'Starting the analysis server' : 'Analysis server unavailable'}</strong>
         <p>
           {waking
-            ? 'SecureLens is starting the analysis server. This can take up to a minute on the free hosting tier.'
+            ? 'The free server may be waking after inactivity. Keep this page open; SecureLens will continue automatically when it is ready. This can take a few minutes.'
             : 'SecureLens could not reach the analysis server. Please try again.'}
         </p>
         {!waking && (

@@ -88,10 +88,10 @@ test('unavailable health exhausts the bounded window without sending a POST', as
   const fetch = vi.fn().mockResolvedValue(failed(503));
   vi.stubGlobal('fetch', fetch);
   const result = expect(api.register({})).rejects.toMatchObject({ code: 'READINESS_TIMEOUT' });
-  await vi.advanceTimersByTimeAsync(90_000);
+  await vi.advanceTimersByTimeAsync(180_000);
   await result;
   expect(fetch.mock.calls.every(([url]) => url === '/api/health')).toBe(true);
-  expect(fetch.mock.calls.length).toBeLessThanOrEqual(12);
+  expect(fetch.mock.calls.length).toBeLessThanOrEqual(21);
   expect(readiness.getBackendStatus()).toBe('unavailable');
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -124,9 +124,66 @@ test('slow health attempts time out and recover within the total window', async 
   const result = readiness.ensureBackendReady();
   await vi.advanceTimersByTimeAsync(1_500);
   expect(readiness.getBackendStatus()).toBe('waking');
-  await vi.advanceTimersByTimeAsync(12_500);
+  await vi.advanceTimersByTimeAsync(65_500);
   await result;
   expect(readiness.getBackendStatus()).toBe('ready');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test('a 50-second cold start is allowed to complete before signup is submitted once', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(async (url) => {
+      if (url === '/api/health') {
+        await new Promise((resolve) => setTimeout(resolve, 50_000));
+        return healthy();
+      }
+      return { ok: true, json: async () => ({ user: { id: 'cold-start-user' } }) };
+    }),
+  );
+  const signup = api.register({});
+  await vi.advanceTimersByTimeAsync(49_999);
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(readiness.getBackendStatus()).toBe('waking');
+  await vi.advanceTimersByTimeAsync(1);
+  expect((await signup).user.id).toBe('cold-start-user');
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/health', '/api/auth/register']);
+  expect(fetch.mock.calls[0][1].headers.Accept).toBe('application/json');
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test('a temporary HTML hosting page is retried without being mistaken for healthy JSON', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'text/html; charset=utf-8' }),
+        json: async () => {
+          throw new SyntaxError('hosting page');
+        },
+      })
+      .mockResolvedValue(healthy()),
+  );
+  const result = readiness.ensureBackendReady();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(readiness.getBackendStatus()).toBe('waking');
+  await vi.advanceTimersByTimeAsync(2_000);
+  await result;
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(readiness.getBackendStatus()).toBe('ready');
+});
+
+test('a shared readiness failure cleans up abort listeners without an unhandled rejection', async () => {
+  const controller = new AbortController();
+  const remove = vi.spyOn(controller.signal, 'removeEventListener');
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(failed(403)));
+  await expect(readiness.ensureBackendReady({ signal: controller.signal })).rejects.toMatchObject({
+    status: 403,
+  });
+  expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
   expect(vi.getTimerCount()).toBe(0);
 });
 

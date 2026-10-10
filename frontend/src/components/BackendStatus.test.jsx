@@ -26,7 +26,7 @@ test('waking status is real loading, disappears on recovery, and allows retry on
     state.listener();
   });
   expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true');
-  expect(screen.getByText(/This can take up to a minute/)).toBeInTheDocument();
+  expect(screen.getByText(/continue automatically/)).toBeInTheDocument();
   expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
   act(() => {
     state.status = 'ready';

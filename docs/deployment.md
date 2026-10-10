@@ -21,11 +21,13 @@
 ### Reliability And Free Hosting
 
 The frontend shares one readiness check across concurrent requests. It polls
-unauthenticated `/api/health` for up to 90 seconds, with 12-second attempts and
+unauthenticated `/api/health` for up to 180 seconds, with 65-second attempts and
 2/3/5/8/10-second backoff, then continues automatically. Successful readiness
 is cached for 10 seconds; there is no background keep-alive. A real loading
 notice appears during a slow wake. Only network/timeouts and 502/503/504 health
-responses are retried. Other HTTP failures retain their own error categories.
+responses and temporary HTML hosting pages are retried. A healthy JSON response
+is still required before any account or analysis request is submitted. Other
+HTTP failures retain their own error categories.
 
 No submitted mutation (signup, login, upload, batch, compare, settings or logout)
 is replayed automatically. An interrupted POST may already have succeeded;
