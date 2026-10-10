@@ -5,6 +5,9 @@
 - Frontend: https://securelens-ten.vercel.app
 - API: https://securelens-api-fo41.onrender.com/api/health
 - Browser requests use relative `/api/...`; Vercel rewrites them to Render.
+- After a retryable proxy-health failure, the browser also makes one public
+  health-only request directly to the configured HTTPS backend with credentials
+  omitted. This wake-up request never carries login, image or session data.
 - Vercel Production: `VITE_API_PROXY=true` and
   `VITE_API_BASE_URL=https://securelens-api-fo41.onrender.com`.
 - Render: `ENVIRONMENT=production`, `COOKIE_SECURE=true`,
@@ -28,6 +31,11 @@ notice appears during a slow wake. Only network/timeouts and 502/503/504 health
 responses and temporary HTML hosting pages are retried. A healthy JSON response
 is still required before any account or analysis request is submitted. Other
 HTTP failures retain their own error categories.
+
+The direct wake-up request is bounded to 65 seconds, is cancelled when the
+readiness window ends, and never independently authorizes an account request.
+The first-party proxy must still return healthy JSON before submission. A
+direct CORS/network failure cannot interrupt otherwise successful proxy recovery.
 
 No submitted mutation (signup, login, upload, batch, compare, settings or logout)
 is replayed automatically. An interrupted POST may already have succeeded;
@@ -75,6 +83,8 @@ See [Vercel rewrites](https://vercel.com/docs/routing/rewrites) and
 The frontend always reads `VITE_API_BASE_URL`; no Render hostname is embedded
 in a component. With `VITE_API_PROXY=true`, browser calls use relative `/api`
 paths and `frontend/vercel.mjs` builds an external rewrite to that origin.
+Only the public fallback health wake-up bypasses that rewrite; authenticated
+requests always retain the first-party proxy and its session cookies.
 The SPA fallback excludes `/api` and `/assets`, so an API failure is not
 silently turned into an HTML page.
 

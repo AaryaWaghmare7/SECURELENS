@@ -14,8 +14,69 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   vi.useRealTimers();
+});
+
+test.each([false, true])(
+  'proxy recovery wakes the host without credentials; direct failure=%s',
+  async (directFails) => {
+    vi.stubEnv('VITE_API_PROXY', 'true');
+    vi.stubEnv('VITE_API_BASE_URL', 'https://backend.example');
+    vi.resetModules();
+    readiness = await import('./readiness');
+    ({ api } = await import('./api'));
+    let proxyCalls = 0;
+    const fetch = vi.fn().mockImplementation(async (url) => {
+      if (url === 'https://backend.example/api/health') {
+        if (directFails) throw new TypeError('CORS during startup');
+        return healthy();
+      }
+      if (url === '/api/health') return ++proxyCalls < 3 ? failed(502) : healthy();
+      return { ok: true, json: async () => ({ user: { id: 'recovered' } }) };
+    });
+    vi.stubGlobal('fetch', fetch);
+    const login = api.login({});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      '/api/health',
+      'https://backend.example/api/health',
+    ]);
+    const wakeOptions = fetch.mock.calls[1][1];
+    expect(wakeOptions).toMatchObject({ method: 'GET', credentials: 'omit', cache: 'no-store' });
+    expect(wakeOptions.body).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fetch.mock.calls.some(([url]) => url === '/api/auth/login')).toBe(false);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect((await login).user.id).toBe('recovered');
+    expect(
+      fetch.mock.calls.filter(([url]) => url === 'https://backend.example/api/health'),
+    ).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([url]) => url === '/api/auth/login')).toHaveLength(1);
+    expect(wakeOptions.signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+test('a direct healthy response cannot bypass an unavailable first-party proxy', async () => {
+  vi.stubEnv('VITE_API_PROXY', 'true');
+  vi.stubEnv('VITE_API_BASE_URL', 'https://backend.example');
+  vi.resetModules();
+  ({ api } = await import('./api'));
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockImplementation(async (url) =>
+        url === 'https://backend.example/api/health' ? healthy() : failed(502),
+      ),
+  );
+  const result = expect(api.register({})).rejects.toMatchObject({ code: 'READINESS_TIMEOUT' });
+  await vi.advanceTimersByTimeAsync(180_000);
+  await result;
+  expect(fetch.mock.calls.some(([url]) => url.includes('/auth/'))).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 test('concurrent readiness callers share one health check and a short healthy cache', async () => {

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { resolveApiBase } from './configuration';
+import { resolveApiBase, resolveHealthWakeUrl } from './configuration';
 import { createVercelConfig } from '../../deployment/config.mjs';
 import { publicRouterBase } from '../../deployment/public-bundle.mjs';
 
@@ -9,6 +9,23 @@ test('local and Vercel proxy requests stay same-origin', () => {
     resolveApiBase({ VITE_API_BASE_URL: 'https://backend.example', VITE_API_PROXY: 'true' }),
   ).toBe('');
   expect(resolveApiBase({ VITE_API_BASE_URL: 'https://api.example/' })).toBe('https://api.example');
+});
+
+test('only a configured public HTTPS backend receives a credential-free health wake-up', () => {
+  const env = { VITE_API_PROXY: 'true', VITE_API_BASE_URL: 'https://backend.example' };
+  expect(resolveHealthWakeUrl(env)).toBe('https://backend.example/api/health');
+  expect(resolveHealthWakeUrl({ ...env, VITE_API_PROXY: 'false' })).toBeNull();
+  expect(resolveHealthWakeUrl({ VITE_API_PROXY: 'true' })).toBeNull();
+  for (const value of [
+    'invalid',
+    'http://api.example',
+    'https://localhost',
+    'https://user:secret@api.example',
+    'https://api.example/api',
+    'https://api.example/?key=value',
+  ]) {
+    expect(resolveHealthWakeUrl({ ...env, VITE_API_BASE_URL: value })).toBeNull();
+  }
 });
 
 test('Vercel forwards API paths before the SPA fallback without caching private data', () => {

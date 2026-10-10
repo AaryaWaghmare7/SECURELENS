@@ -1,10 +1,12 @@
 import { ApiError, diagnose, fetchResponse } from './transport';
+import { resolveHealthWakeUrl } from './configuration';
 
 const WINDOW_MS = 180_000;
 const ATTEMPT_MS = 65_000;
 const READY_TTL_MS = 10_000;
 const BACKOFF_MS = [2_000, 3_000, 5_000, 8_000, 10_000];
 const listeners = new Set();
+const wakeUrl = resolveHealthWakeUrl(import.meta.env);
 let status = 'idle';
 let readyUntil = 0;
 let flight = null;
@@ -27,6 +29,8 @@ async function poll() {
   const slow = setTimeout(() => publish('waking'), 1_500);
   publish('checking');
   let attempt = 0;
+  let wakeController;
+  let wakeTimer;
   try {
     while (Date.now() < deadline) {
       const controller = new AbortController();
@@ -75,6 +79,21 @@ async function poll() {
           error = new ApiError('Health check timed out.', 'TIMEOUT', null, true);
         diagnose('/health', 'GET', error);
         if (!error.retryable) throw error;
+        // A proxy gateway can fail before the sleeping host starts. Wake it directly,
+        // but require the first-party proxy to recover before sending any user data.
+        if (wakeUrl && !wakeController) {
+          wakeController = new AbortController();
+          wakeTimer = setTimeout(() => wakeController.abort(), ATTEMPT_MS);
+          fetch(wakeUrl, {
+            method: 'GET',
+            credentials: 'omit',
+            cache: 'no-store',
+            headers: { Accept: 'application/json' },
+            signal: wakeController.signal,
+          })
+            .catch(() => {})
+            .finally(() => clearTimeout(wakeTimer));
+        }
       } finally {
         clearTimeout(timer);
       }
@@ -95,6 +114,8 @@ async function poll() {
     throw error;
   } finally {
     clearTimeout(slow);
+    clearTimeout(wakeTimer);
+    wakeController?.abort();
   }
 }
 
